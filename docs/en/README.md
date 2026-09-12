@@ -1,44 +1,39 @@
-# Start here
+# Make Christian song videos on your phone
 
 [Українська](../uk/README.md) · [Русский](../ru/README.md) · English
 
-This project helps people prepare Christian songs, illustrations and videos with AI assistance. “Agentic” means the assistant can carry out several steps: find your audio file, read its lyrics, make a scene plan, prepare pictures and assemble a video. You choose the message, check the result and decide what to share.
+This project helps you make videos for Christian songs to share on YouTube, Shorts, TikTok and Reels, so more people can hear about Christ through social media.
 
-The first working example is a complete song turned into a vertical video for TikTok. The pictures change during the music. It is a slideshow, not moving AI animation. Independent pictures are requested in parallel when the service allows it.
+📱 **You can start with an Android phone. No computer needed.** You will install Codex CLI, an AI assistant from OpenAI. It can help prepare illustrations and combine them with your song into a video. You can talk to it in everyday language.
+
+## Where to start
+
+👉 **[Set up your phone once](phone-setup.md)** — if you do not have Codex yet.
+
+🎵 **[Make a video](first-video.md)** — if your phone is already set up. This is a useful page to bookmark.
+
+🛟 **[Something is not working](help.md)** — quick tips and a message you can use to ask for help.
+
+## What you will get
+
+A downloaded song → a few pictures based on its meaning → a finished vertical MP4 in **Downloads**.
+
+The whole song plays. The pictures change, but each picture is still. You watch the result and decide whether to publish it. Before uploading, check whether your chosen platform accepts a video of that length.
+
+## What it costs
+
+The project itself is free. As of September 12, 2026, ChatGPT Go costs **$8/month** and Plus costs **$20/month**. Codex Free has limits and does not include image generation. Paid plans also have limits. Check whether image generation is available on your phone, and check the final price at checkout. [Official pricing](https://learn.chatgpt.com/docs/pricing).
+
+If image generation is unavailable, you can use your own pictures. The [video guide](first-video.md) explains how.
 
 ## What you need
 
-- An Android phone, internet access and space for Linux tools, pictures and video. Keep several gigabytes free as a practical starting allowance, not a guaranteed requirement. Keep the phone charged during rendering.
-- An account with access to Codex. Generating images needs a separately available image tool in the session; installing this repository does not unlock it. Check access and cost in your own account before paying for anything.
-- A downloaded song that you are entitled to use, and its lyrics if they are not inside the audio file.
+- An Android phone, internet, a charged battery and a few gigabytes of free space.
+- A song you have permission to use, and its lyrics.
+- A ChatGPT account to sign in to Codex.
 
-You do not need a computer, a GitHub account just to download this repository, LabelGrid, ADB, or programming knowledge for the main route. You will copy a few commands during setup. The guide explains where to paste them and how to know each step worked.
+This method has not been tested on iPhone. You may need help with the first setup; you do not need to know how to code to use it afterwards.
 
-This phone route is for **Android with Termux and Ubuntu**. We have not tested an equivalent local setup on iPhone. An iPhone user can prepare text and pictures in a browser and use a phone video editor, but that is a separate manual workflow.
+Before sharing, check the lyrics, Bible quotations and pictures. Be honest about the use of AI. A person is responsible for the content and its publication.
 
-## Choose your next step
-
-1. New to this? Follow [phone setup](phone-setup.md).
-2. Codex already runs on your phone? Go to the repository step in that guide, then [make your first video](first-video.md).
-3. Something failed? Find the message in [troubleshooting](troubleshooting.md).
-4. Helping others or updating the project? Read [maintenance and evidence](maintenance.md).
-
-## A few words used in the guide
-
-| Word | Meaning here |
-| --- | --- |
-| Terminal | An app screen where you type or paste commands. |
-| Termux | The Android app that provides that screen and basic tools. |
-| Ubuntu / Linux | A working environment inside Termux, used to run the tools in this guide. It does not replace Android. |
-| Codex | The AI assistant you give tasks to in ordinary language. |
-| Skill | A folder of instructions and helpers that teaches the assistant a repeatable workflow. |
-| Repository | The project folder and its copy on GitHub. |
-| Render | Turn pictures and sound into a finished video file. |
-
-## How we use AI for evangelism
-
-Start from a message you can stand behind. Check Bible quotations against the translation you intend to use. Present interpretations as interpretations; do not pass invented statements off as Scripture, testimony or words from God. Ask a trusted church member or pastor to review material when you need help with its meaning.
-
-Treat people as people: honest conversation, permission to disengage, no spam, impersonation or pressure. This repository prepares materials; it does not run automatic messages to strangers. Describe AI involvement honestly and check the audio, images and any people's likenesses before sharing. Publishing is a separate human decision.
-
-These instructions are independent of OpenAI, Suno, TikTok and Termux; they are not an official endorsement by those services. The working phone experience and its limits are recorded in [maintenance](maintenance.md).
+[For the person helping with setup](troubleshooting.md) · [What has been tested and how to maintain the project](maintenance.md)

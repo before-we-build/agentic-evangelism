@@ -2,6 +2,8 @@
 
 [Українська](../uk/troubleshooting.md) · [Русский](../ru/troubleshooting.md) · English
 
+This detailed reference is for someone helping with setup. If you are new here, start with [quick help](help.md).
+
 Start with the exact error and the screen where it happened: Android, Termux, Ubuntu or Codex. Copy a short error message, not an entire private session or configuration. Hide login codes, tokens, email addresses and personal filenames before asking for public help.
 
 ## The command is not found

@@ -1,181 +1,169 @@
-# Set up an Android phone
+# Set up your phone once
 
 [Українська](../uk/phone-setup.md) · [Русский](../ru/phone-setup.md) · English
 
-You can do this on one phone. Keep this page in the browser and switch to Termux when asked. A split screen is convenient if your phone supports it.
+You need an Android phone and internet. No computer is needed. If Codex already works and can see the `suno-tiktok-video` skill, go to [making a video](first-video.md).
 
-The guide combines a working phone setup with installation steps reconstructed from current documentation. The saved sessions began after the original installation, so a clean installation from this guide has **not** been tested from beginning to end. See [what was verified](maintenance.md). Android/PRoot is a community route, not a promise of official Codex support.
+**How to follow the steps:** copy the text from a grey box, press and hold the screen in the right app → **Paste** → **Enter**. Wait for it to finish before moving on.
 
-## Before you start
+If you see `Do you want to continue? [Y/n]`, type `y` and press Enter to continue installing. If you see an error or an unclear question about replacing files, stop and open [help](help.md).
 
-Use Wi-Fi if possible; installing Linux and its tools downloads substantial data. Keep several gigabytes free and allow the phone time to finish. Do not delete an existing Termux installation to start over: its private files may contain your work and sign-in data.
+## 1. Install Termux
 
-Read each explanation, copy only the contents of its command box, paste into the named screen, then press Enter. Wait until the command finishes and the input prompt returns. If a command reports an error, stop there and use [troubleshooting](troubleshooting.md); do not paste the remaining steps over the error. Never type the decorative `$` or `#` from somebody else's terminal screenshot.
+Termux is the app where you will paste the commands below.
 
-## 1. Install and open Termux
+1. Open the [Termux download page](https://f-droid.org/en/packages/com.termux/).
+2. Find **Download APK**, download the file and open it. You do not have to install F-Droid itself.
+3. If Android asks for permission to install an app from your browser, allow this installation.
+4. Open Termux and wait for it to get ready.
 
-On the phone, open the [Termux F-Droid page](https://f-droid.org/en/packages/com.termux/), download its APK and open the download. Android may ask you to allow installation from that browser. Allow it only for this intended install. Open Termux and let its first setup finish. Use the same download source for Termux add-ons. [Termux installation instructions](https://github.com/termux/termux-app#installation).
+If Termux is already installed, do not uninstall it: it may contain your files. Keep a few gigabytes of free space and use Wi-Fi if you can.
 
-**In Termux**, update its tool list:
+## 2. Prepare Termux
+
+**Where: in Termux.** Paste one box at a time.
+
+Update the tools:
 
 ```sh
 pkg update
 pkg upgrade
 ```
 
-Read any confirmation before accepting it. A question such as `Do you want to continue? [Y/n]` is waiting for you: type `y` and press Enter to continue the installation you intended. For an unfamiliar configuration or replacement question, ask for help before choosing. Scrolling package messages are normal. Success: the command finishes and you can type again.
-
-## 2. Give Termux access to Downloads
-
-**In Termux**, run:
+Give Termux access to your phone's files:
 
 ```sh
 termux-setup-storage
 ```
 
-Approve the Android file-access prompt, then check:
+Tap **Allow** when Android asks. Check access:
 
 ```sh
 ls ~/storage/downloads
 ```
 
-Success: you see filenames from the phone's Downloads folder, or an empty list if that folder is empty. A `Permission denied` message is not success. Do this in Termux, not inside Ubuntu. If an existing installation already lists the files, skip repeating storage setup.
+**You should see:** a list of your downloads. If the folder is empty, the list will be empty. `Permission denied` means access is missing — do not continue yet.
 
-## 3. Put Ubuntu inside Termux
+## 3. Install Ubuntu
 
-**In Termux**, install the environment manager:
+Ubuntu lets the video programs run inside Termux. It does not replace Android or require you to root your phone.
+
+**Where: in the same Termux app.**
 
 ```sh
 pkg install proot-distro
 ```
 
-Check for an existing environment:
-
 ```sh
 proot-distro list
 ```
 
-If Ubuntu is already installed, use it; do not reset it. Otherwise install it:
+If Ubuntu is already installed, skip the next box. Otherwise:
 
 ```sh
 proot-distro install ubuntu
 ```
 
-This may take a while. Then enter Ubuntu and explicitly expose the phone's shared storage:
+Wait for the download to finish. Then open Ubuntu:
 
 ```sh
 proot-distro login ubuntu --bind /storage/emulated/0:/storage/emulated/0
 ```
 
-Success: the prompt changes. The word `root` here is the Linux environment's user; this setup does not require rooting Android. Ubuntu commands below belong in this new screen. Check:
+**You are still in the Termux app, but Ubuntu now runs your commands.** Check:
 
 ```sh
 cat /etc/os-release
-ls /storage/emulated/0/Download
 ```
 
-You should see Ubuntu information and your downloaded filenames. [PRoot-Distro instructions](https://github.com/termux/proot-distro#quick-start). The installed distribution version may differ from the recorded Ubuntu 26.04; do not replace an existing working environment merely to match it.
+**You should see:** the name Ubuntu. Enter all the following commands here, through step 7.
 
-## 4. Install the working tools
+## 4. Install the video programs and Codex
 
-**Inside Ubuntu**, run:
+**Where: in Termux with Ubuntu open.**
 
 ```sh
 apt update
 apt install nodejs npm git python3 ffmpeg ca-certificates
 ```
 
-These provide the assistant launcher, project download, helper scripts and video encoder. Check each:
-
-```sh
-node --version
-npm --version
-python3 --version
-ffmpeg -version
-ffprobe -version
-```
-
-Success: version information appears. The recorded setup used Node 22.22.1. If the Codex install below reports an unsupported Node version, keep the error and ask for help updating Node in Ubuntu; updating Node in Termux would change a different environment.
-
-## 5. Install Codex and sign in
-
-**Inside Ubuntu**, install the official npm package used by this workflow:
+When installation finishes:
 
 ```sh
 npm install -g @openai/codex
+```
+
+Check:
+
+```sh
 codex --version
 ```
 
-Success: Codex prints a version. The recorded version was 0.153.2; the command may install a newer release. [Codex CLI](https://developers.openai.com/codex/cli/).
+**You should see:** `codex-cli` and a version number. If there is an error, do not reinstall everything — [ask for help](help.md).
 
-Start sign-in:
+## 5. Sign in to your account
+
+**Where: in Termux with Ubuntu open.**
 
 ```sh
 codex login --device-auth
 ```
 
-Open the displayed link in the browser **on this same phone**, sign in and enter the temporary code. You may need to enable device-code login in your account's security settings. Return to Termux and check:
+1. Open the link Codex shows you in the browser on this same phone.
+2. Sign in to your ChatGPT account and enter the temporary code shown.
+3. Return to Termux. Keep Termux open while you sign in.
+
+Check that you are signed in:
 
 ```sh
 codex login status
 ```
 
-Device login depends on account settings. If unavailable, try `codex login` and open its displayed link on the phone. Never send someone the code or your `auth.json`. ChatGPT sign-in and API billing are different access methods; this route uses ChatGPT sign-in. [Official login guidance](https://developers.openai.com/codex/auth/).
+**You should see:** a message confirming that you are signed in. Do not send the code to anyone. If signing in with a code is unavailable, see [help](help.md).
 
-## 6. Download this project and install its skill
+## 6. Download the project
 
-**Inside Ubuntu**, put the project in private Linux storage. Keep finished videos in Android Downloads instead.
+**Where: in Termux with Ubuntu open.**
 
 ```sh
 mkdir -p ~/projects
 cd ~/projects
-git clone https://github.com/before-we-build/agentic-evangelism.git
-cd agentic-evangelism
 ```
 
-If `agentic-evangelism` already exists, enter it with `cd ~/projects/agentic-evangelism`; do not delete it or clone over it.
+```sh
+git clone https://github.com/before-we-build/agentic-evangelism.git
+```
 
-The next command copies the skill to Codex's user skill directory and refuses to overwrite an existing copy:
+If it says the `agentic-evangelism` folder already exists, do not delete it. Simply continue:
+
+```sh
+cd ~/projects/agentic-evangelism
+```
+
+Install the skill — a ready-made set of instructions for the assistant:
 
 ```sh
 python3 scripts/install_skill.py
 ```
 
-Success: an installed path ending in `suno-tiktok-video` appears. This copies workflow instructions, not an image-generation service. Modern Codex reads user skills from `~/.agents/skills`; some older installations use `~/.codex/skills`. If the skill is absent, see [troubleshooting](troubleshooting.md). [Local skill discovery](https://developers.openai.com/codex/skills/).
+**You should see:** `Встановлено / Установлено / Installed` and the path to the skill. If a copy already exists, the program will leave it unchanged; [help explains what to do](help.md).
 
-## 7. Start the assistant
+## 7. Open the assistant and check that everything is ready
 
-**Inside Ubuntu**, from the project folder:
+In the same window, enter:
 
 ```sh
 codex
 ```
 
-Read the trust and permission prompts; approve this project only if you intend to let it work with these files. Inside **Codex**, type `/skills` and look for `suno-tiktok-video`. Then send this ordinary-language message:
+Read the question about trusting the folder and granting permissions. You are now in **a conversation with Codex**. Send it this message:
 
-> Check whether the suno-tiktok-video skill, ffmpeg, ffprobe and access to Android Downloads are available. Also check whether this session can actually generate and save images. Do not generate anything or spend money yet. Explain any missing part in simple words.
+> Check whether my phone is ready to make videos: can you see the suno-tiktok-video skill, my downloaded files, and the ffmpeg and ffprobe programs? Can you create and save pictures in this particular conversation? Do not generate anything or spend money yet. Explain in simple words what is ready and what is missing.
 
-If images cannot be generated, ask for scene prompts, create the pictures in an image tool you already use, save them to Downloads, then explicitly ask Codex to use those files. See [first video](first-video.md). A fresh Codex installation may have different tools from the recorded session.
+**You are ready when:** Codex can see the song in Downloads, run the video programs, and use either image generation or your own pictures. Installing the skill alone does not enable image generation.
 
-You are ready when the assistant can read Downloads, run the encoder and has either an available image tool or your chosen local pictures. ADB and LabelGrid are optional and are not needed to reach this point.
+👉 Next: **[make a video](first-video.md)**. You do not need to repeat the installation next time.
 
-## Next time you open the phone
+---
 
-**Which screen am I in?** If you see a conversation with the assistant, you are in Codex; press Ctrl+C as prompted to return to the shell. At the shell, run `cat /etc/os-release`. If it says Ubuntu, you are already inside Ubuntu. If the file is absent, try `command -v pkg`: a path containing `com.termux` means you are in Termux. If neither matches, ask for help rather than entering another Linux environment blindly.
-
-Open Termux. If you are already inside Ubuntu, skip the first command. Otherwise:
-
-```sh
-proot-distro login ubuntu --bind /storage/emulated/0:/storage/emulated/0
-```
-
-**Inside Ubuntu**:
-
-```sh
-cd ~/projects/agentic-evangelism
-codex
-```
-
-`codex resume` lets you select an earlier conversation. To leave Codex, press Ctrl+C as prompted; Termux has a Ctrl key in its extra-key row. Type `exit` at the Ubuntu shell to return to Termux. You do not reinstall everything each time.
-
-Continue with [your first video](first-video.md).
+This method has been used on an Android phone, but the full process on a phone with nothing installed yet has not been tested. You may need help on another device. [Tested steps and official sources](maintenance.md) · [Technical guide for your helper](troubleshooting.md).
