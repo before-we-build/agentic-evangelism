@@ -4,6 +4,8 @@
 
 You set up your phone [once](phone-setup.md). After that, repeat only the steps below for each new song.
 
+**A Suno subscription is optional.** You can use an authorized song recording and your own photos. If you need Suno: Free has restrictions, and the cheapest paid plan, Pro, costs around $10 for a month with monthly billing. [Start without unnecessary spending and understand Suno limits](costs.md).
+
 ## 1. Download the song
 
 Save audio from Suno or another source you have permission to use. Wait for the download to finish.

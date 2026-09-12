@@ -22,6 +22,8 @@ The whole song plays. The pictures change, but each picture is still. You watch 
 
 ## What it costs
 
+**A Suno subscription is optional.** You can use an authorized song recording and your own photos. If you need Suno: Free has restrictions, and the cheapest paid plan, Pro, costs around $10 for a month with monthly billing. [Start without unnecessary spending and understand Suno limits](costs.md).
+
 The project itself is free. As of September 12, 2026, ChatGPT Go costs **$8/month** and Plus costs **$20/month**. Codex Free has limits and does not include image generation. Paid plans also have limits. Check whether image generation is available on your phone, and check the final price at checkout. [Official pricing](https://learn.chatgpt.com/docs/pricing).
 
 If image generation is unavailable, you can use your own pictures. The [video guide](first-video.md) explains how.

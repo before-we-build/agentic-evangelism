@@ -8,6 +8,8 @@ You need an Android phone and internet. No computer is needed. If Codex already 
 
 If you see `Do you want to continue? [Y/n]`, type `y` and press Enter to continue installing. If you see an error or an unclear question about replacing files, stop and open [help](help.md).
 
+**A Suno subscription is optional.** You can use an authorized song recording and your own photos. If you need Suno: Free has restrictions, and the cheapest paid plan, Pro, costs around $10 for a month with monthly billing. [Start without unnecessary spending and understand Suno limits](costs.md).
+
 ## 1. Install Termux
 
 Termux is the app where you will paste the commands below.
