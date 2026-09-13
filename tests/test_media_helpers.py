@@ -13,6 +13,48 @@ ROOT = Path(__file__).resolve().parents[1]
 HELPERS = ROOT / 'skills' / 'suno-tiktok-video' / 'scripts'
 
 
+spec = importlib.util.spec_from_file_location('build_video', HELPERS / 'build_video.py')
+build_video_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build_video_module)
+calculate_timeline = build_video_module.calculate_timeline
+
+
+class TimelineTests(unittest.TestCase):
+    def test_single_scene_uses_concat_mode(self):
+        clips, offsets, t = calculate_timeline([5.0], 5.0, transition='fade', transition_duration=0.75)
+        self.assertEqual(clips, [125])
+        self.assertIsNone(offsets)
+        self.assertIsNone(t)
+
+    def test_transition_none_uses_concat_mode(self):
+        clips, offsets, t = calculate_timeline([3.0, 3.0], 6.0, transition='none', transition_duration=0.75)
+        self.assertEqual(clips, [75, 75])
+        self.assertIsNone(offsets)
+        self.assertIsNone(t)
+
+    def test_default_transition_is_fade(self):
+        clips, offsets, t = calculate_timeline([3.0, 4.0, 3.0], 10.0)
+        self.assertIsNotNone(offsets)
+        self.assertEqual(len(offsets), 2)
+        total_frames = 250
+        self.assertEqual(offsets[-1] + clips[-1], total_frames)
+
+    def test_fade_transition_covers_exact_total_frames(self):
+        clips, offsets, t = calculate_timeline([3.0, 4.0, 3.0], 10.0, transition='fade', transition_duration=0.75)
+        self.assertIsNotNone(offsets)
+        self.assertEqual(len(offsets), 2)
+        total_frames = 250
+        self.assertEqual(offsets[-1] + clips[-1], total_frames)
+        # Ensure transitions do not collide
+        self.assertGreaterEqual(offsets[1], offsets[0] + t)
+
+    def test_tiny_scenes_fallback_safely(self):
+        clips, offsets, t = calculate_timeline([0.04, 0.04], 0.08, transition='fade', transition_duration=0.75)
+        self.assertEqual(clips, [1, 1])
+        self.assertIsNone(offsets)
+        self.assertIsNone(t)
+
+
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg / FFprobe')
 class MediaTests(unittest.TestCase):
     def setUp(self):
@@ -53,6 +95,19 @@ class MediaTests(unittest.TestCase):
         again = self.build(board)
         self.assertNotEqual(again.returncode, 0)
         self.assertEqual((self.work / 'result.mp4').read_bytes(), before)
+
+    def test_complete_two_scene_video_with_fade_transition(self):
+        board = self.board([0.4, 0.4])
+        result = subprocess.run([
+            sys.executable, str(HELPERS / 'build_video.py'), '--audio', str(self.audio),
+            '--storyboard', str(board), '--transition', 'fade',
+            '--transition-duration', '0.2', '--output', str(self.work / 'result_fade.mp4')],
+            text=True, capture_output=True, timeout=90)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout.splitlines()[-1])
+        self.assertTrue(report['decode_verified'])
+        self.assertEqual(report['transition'], 'fade')
+        self.assertAlmostEqual(report['duration'], 0.8, delta=0.15)
 
     def test_incomplete_timeline_does_not_create_video(self):
         result = self.build(self.board([0.2, 0.2]))

@@ -20,14 +20,61 @@ def run(args):
     subprocess.run(args, check=True)
 
 
+def calculate_timeline(lengths, total_duration, transition='fade', transition_duration=0.75, fps=25):
+    total_frames = math.ceil(total_duration * fps)
+    num_scenes = len(lengths)
+    boundaries = [0]
+    elapsed = 0.0
+    for length in lengths:
+        elapsed += length
+        boundaries.append(round(elapsed * fps))
+    boundaries[-1] = total_frames
+    nominal_frames = [b - a for a, b in zip(boundaries, boundaries[1:])]
+    if min(nominal_frames) < 1:
+        raise ValueError('Every scene must occupy at least one video frame')
+    if transition == 'none' or num_scenes <= 1:
+        return nominal_frames, None, None
+    min_frames = min(nominal_frames)
+    if min_frames < 4 or total_frames < 6:
+        return nominal_frames, None, None
+    desired_t_frames = max(2, round(transition_duration * fps))
+    t_frames = min(desired_t_frames, max(2, min_frames // 2))
+    offsets = []
+    for k in range(1, num_scenes):
+        nominal_o = boundaries[k] - t_frames // 2
+        offsets.append(nominal_o)
+    for i in range(len(offsets)):
+        min_allowed = 1 if i == 0 else offsets[i - 1] + t_frames
+        if offsets[i] < min_allowed:
+            offsets[i] = min_allowed
+    if offsets[-1] + t_frames >= total_frames:
+        offsets[-1] = total_frames - t_frames - 1
+    for i in range(len(offsets) - 2, -1, -1):
+        if offsets[i] + t_frames > offsets[i + 1]:
+            offsets[i] = offsets[i + 1] - t_frames
+    if offsets[0] < 1 or any(offsets[i] + t_frames > offsets[i + 1] for i in range(len(offsets) - 1)) or offsets[-1] + t_frames >= total_frames:
+        return nominal_frames, None, None
+    clip_frames = [offsets[0] + t_frames]
+    for k in range(1, num_scenes - 1):
+        clip_frames.append((offsets[k] + t_frames) - offsets[k - 1])
+    clip_frames.append(total_frames - offsets[-1])
+    return clip_frames, offsets, t_frames
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--audio', required=True, type=Path)
     visuals = parser.add_mutually_exclusive_group(required=True)
     visuals.add_argument('--image', type=Path, help='Explicit single-image mode')
     visuals.add_argument('--storyboard', type=Path, help='JSON with scenes and duration_seconds')
+    parser.add_argument('--transition', choices=['none', 'fade'], default='fade',
+                        help='Transition between storyboard scenes (default: fade)')
+    parser.add_argument('--transition-duration', type=float, default=0.75,
+                        help='Transition duration in seconds (default: 0.75)')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
+    if args.transition_duration <= 0 or not math.isfinite(args.transition_duration):
+        parser.error('Transition duration must be a positive finite number')
     for tool in ('ffmpeg', 'ffprobe'):
         if not shutil.which(tool):
             parser.error(f'{tool} is not installed')
@@ -73,23 +120,18 @@ def main():
     for path in images:
         if not path.is_file() or path.stat().st_size == 0:
             parser.error(f'Missing or empty image: {path}')
-    # Round cumulative boundaries, not each duration, to avoid accumulated drift.
-    boundaries = [0]
-    elapsed = 0.0
-    for length in lengths:
-        elapsed += length
-        boundaries.append(round(elapsed * 25))
-    boundaries[-1] = math.ceil(duration * 25)
-    frames = [b - a for a, b in zip(boundaries, boundaries[1:])]
-    if min(frames) < 1:
-        parser.error('Every scene must occupy at least one video frame')
+    try:
+        clip_frames, offsets, t_frames = calculate_timeline(
+            lengths, duration, args.transition, args.transition_duration, fps=25)
+    except ValueError as err:
+        parser.error(str(err))
     # Decode the selected audio before spending time on rendering.
     run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-i', str(audio),
          '-map', '0:a:0', '-f', 'null', '-'])
     work = Path(tempfile.mkdtemp(prefix='suno-tiktok-'))
     stage = work / 'verified-video.mp4'
     print(json.dumps({'work_dir': str(work), 'audio_duration': duration}), flush=True)
-    for index, (image, count) in enumerate(zip(images, frames)):
+    for index, (image, count) in enumerate(zip(images, clip_frames)):
         clip = work / f'scene-{index:05d}.mp4'
         print(json.dumps({'scene': index + 1, 'total': len(images)}), flush=True)
         run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
@@ -99,14 +141,42 @@ def main():
              '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
              '-crf', '22', '-pix_fmt', 'yuv420p', '-threads', '4',
              '-frames:v', str(count), '-an', str(clip)])
-    # Only generated ASCII filenames enter the concat syntax, never user paths.
-    playlist = work / 'scenes.txt'
-    playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(images))))
-    run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
-         '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
-         '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '-1',
-         '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
-         '-movflags', '+faststart', str(stage)])
+    if offsets is not None and len(images) > 1:
+        t_sec = t_frames / 25
+        filter_steps = []
+        last_label = '0:v'
+        for idx in range(1, len(images)):
+            next_label = f'{idx}:v'
+            out_label = 'v' if idx == len(images) - 1 else f'x{idx}'
+            fmt = ',format=yuv420p' if idx == len(images) - 1 else ''
+            o_sec = offsets[idx - 1] / 25
+            filter_steps.append(
+                f'[{last_label}][{next_label}]xfade=transition=fade:duration={t_sec:.4f}:offset={o_sec:.4f}{fmt}[{out_label}]'
+            )
+            last_label = out_label
+        filter_complex = ';'.join(filter_steps)
+        cmd = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-n']
+        for i in range(len(images)):
+            cmd.extend(['-i', str(work / f'scene-{i:05d}.mp4')])
+        cmd.extend([
+            '-i', str(audio),
+            '-filter_complex', filter_complex,
+            '-map', '[v]', '-map', f'{len(images)}:a:0', '-map_metadata', '-1',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22',
+            '-pix_fmt', 'yuv420p', '-threads', '4',
+            '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
+            '-movflags', '+faststart', str(stage)
+        ])
+        run(cmd)
+    else:
+        # Only generated ASCII filenames enter the concat syntax, never user paths.
+        playlist = work / 'scenes.txt'
+        playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(images))))
+        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+             '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
+             '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '-1',
+             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
+             '-movflags', '+faststart', str(stage)])
     result = probe(stage)
     video = [s for s in result['streams'] if s['codec_type'] == 'video']
     sound = [s for s in result['streams'] if s['codec_type'] == 'audio']
@@ -130,9 +200,11 @@ def main():
         shutil.copyfileobj(src, dst)
     if output.stat().st_size != stage.stat().st_size:
         raise RuntimeError('Destination copy size mismatch')
+    effective_transition = args.transition if (offsets is not None and len(images) > 1) else 'none'
     print(json.dumps({'output': str(output), 'bytes': output.stat().st_size,
                       'duration': float(result['format']['duration']),
                       'resolution': '1080x1920', 'decode_verified': True,
+                      'transition': effective_transition,
                       'android_indexing': 'not checked by this script',
                       'report': str(work / 'verification.json')}, ensure_ascii=False))
 

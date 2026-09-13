@@ -52,7 +52,7 @@ For an explicitly requested single-image video, replace `--storyboard` with `--i
 
 The helper preserves complete images with padding if needed, rounds scene boundaries to video frames, rejects incomplete timeline coverage, refuses overwrite, checks stable audio, and encodes the full song. It checks codecs, dimensions and durations, decodes the finished file for errors, and only then copies the verified MP4 to its destination. Progress, temporary files and verification JSON are printed. Scene lengths must be positive and sum to audio duration within 0.15 seconds; use the probed duration, not a rounded display value.
 
-Before accepting output, inspect representative frames including a scene change and confirm that the images follow the storyboard. Technical verification does not validate lyric timing. Do not crop/normalize audio, add fades or trim the song unless requested. Default transitions are simple cuts; more elaborate transitions are optional.
+Before accepting output, inspect representative frames including a scene change and confirm that the images follow the storyboard. Technical verification does not validate lyric timing. Do not crop/normalize audio, add fades or trim the song unless requested. Default transitions are smooth crossfades (`--transition fade`, 0.75 s); pass `--transition none` for simple cuts.
 
 Use a short ASCII basename for Android discovery. On failure, inspect and correct the cause; an incomplete destination is not ready. Preserve it and retry with a fresh filename. Never delete inputs or previous outputs. Current TikTok account/upload limits require current official verification if relevant; advertising duration recommendations do not limit full-song posts.
 

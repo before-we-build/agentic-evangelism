@@ -57,7 +57,7 @@ Codex should show you the file and explain which pictures it will prepare. If it
 
 When a permission request appears, read the action and filename. Allow only what is needed for your video. If anything is unclear, ask for an explanation.
 
-The pictures will be still, and they will change roughly with the meaning of the song, without matching the words exactly. The whole song will play.
+The pictures will be still, and they will change roughly with the meaning of the song, without matching the words exactly. Transitions between pictures are smooth crossfades by default. If you prefer sharp cuts without fades, you can ask for simple cuts (`--transition none`). The whole song will play.
 
 <details>
 <summary>No image generation? Use your own pictures</summary>
