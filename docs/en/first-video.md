@@ -59,6 +59,9 @@ When a permission request appears, read the action and filename. Allow only what
 
 The pictures will be still, and they will change roughly with the meaning of the song, without matching the words exactly. Transitions between pictures are smooth crossfades by default. If you prefer sharp cuts without fades, you can ask for simple cuts (`--transition none`). The whole song will play.
 
+**Tip for style and characters:** If your song is story-driven or you prefer a specific art style, specify it in your request, for example:
+> Create illustrations in a unified realistic digital painting style. The protagonist is a traveler around 40 years old in a navy jacket and ochre scarf; keep his appearance and clothing consistent across all scenes featuring him.
+
 <details>
 <summary>No image generation? Use your own pictures</summary>
 
