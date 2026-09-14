@@ -74,6 +74,24 @@ class CliArgsTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn('not installed or not executable', proc.stderr)
 
+    def test_build_video_invalid_license_choice(self):
+        proc = subprocess.run([
+            sys.executable, str(HELPERS / 'build_video.py'),
+            '--audio', 'dummy.mp3', '--image', 'dummy.png', '--output', 'dummy.mp4',
+            '--license', 'invalid_choice'
+        ], capture_output=True, text=True, encoding='utf-8')
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('invalid choice', proc.stderr)
+
+    def test_build_video_invalid_attribution_lang(self):
+        proc = subprocess.run([
+            sys.executable, str(HELPERS / 'build_video.py'),
+            '--audio', 'dummy.mp3', '--image', 'dummy.png', '--output', 'dummy.mp4',
+            '--attribution-lang', 'de'
+        ], capture_output=True, text=True, encoding='utf-8')
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('invalid choice', proc.stderr)
+
 
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg / FFprobe')
 class MediaTests(unittest.TestCase):

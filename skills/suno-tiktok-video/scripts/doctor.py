@@ -9,9 +9,9 @@ import sys
 import tempfile
 
 try:
-    from platform_utils import detect_platform, get_downloads_dir
+    from platform_utils import detect_platform, get_downloads_dir, find_system_font
 except ImportError:
-    from .platform_utils import detect_platform, get_downloads_dir
+    from .platform_utils import detect_platform, get_downloads_dir, find_system_font
 
 
 def check_python() -> dict:
@@ -29,12 +29,15 @@ def find_tool(name: str, custom_path: str | None = None) -> str | None:
 
 
 def check_ffmpeg_features(ffmpeg_bin: str) -> dict:
+    font = find_system_font()
     features = {
         'libx264': False,
         'aac': False,
         'scale_filter': False,
         'pad_filter': False,
         'xfade_filter': False,
+        'drawtext_filter': False,
+        'system_font': str(font) if font else None,
     }
     try:
         codecs_proc = subprocess.run(
@@ -61,6 +64,7 @@ def check_ffmpeg_features(ffmpeg_bin: str) -> dict:
         features['scale_filter'] = ' scale ' in filters_out or '\nscale ' in filters_out
         features['pad_filter'] = ' pad ' in filters_out or '\npad ' in filters_out
         features['xfade_filter'] = ' xfade ' in filters_out or '\nxfade ' in filters_out
+        features['drawtext_filter'] = ' drawtext ' in filters_out or '\ndrawtext ' in filters_out
     except Exception as e:
         features['error'] = str(e)
 

@@ -9,6 +9,11 @@ import subprocess
 import tempfile
 import time
 
+try:
+    from platform_utils import detect_audio_attribution, find_system_font
+except ImportError:
+    from .platform_utils import detect_audio_attribution, find_system_font
+
 
 def probe(path, ffprobe_bin='ffprobe'):
     return json.loads(subprocess.check_output([
@@ -75,6 +80,12 @@ def main():
     parser.add_argument('--ffmpeg', type=Path, help='Explicit path to ffmpeg binary')
     parser.add_argument('--ffprobe', type=Path, help='Explicit path to ffprobe binary')
     parser.add_argument('--work-dir', type=Path, help='Custom working directory for temp clips')
+    parser.add_argument('--license', choices=['free', 'commercial'], default='free',
+                        help='Audio license mode: free (enables attribution) or commercial (omits mandatory attribution)')
+    parser.add_argument('--attribution', default='auto',
+                        help='Attribution text: auto (detect generator), none (omit overlay), or custom text string')
+    parser.add_argument('--attribution-lang', choices=['ru', 'uk', 'en'], default='ru',
+                        help='Language for auto attribution and caption (default: ru)')
     args = parser.parse_args()
 
     if args.transition_duration <= 0 or not math.isfinite(args.transition_duration):
@@ -142,6 +153,42 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     stage = work / 'verified-video.mp4'
     print(json.dumps({'work_dir': str(work), 'audio_duration': duration}, ensure_ascii=False), flush=True)
+
+    attr_info = detect_audio_attribution(metadata=metadata, filename=audio, lang=args.attribution_lang)
+    if args.attribution == 'none' or args.license == 'commercial':
+        active_attr_text = None
+    elif args.attribution != 'auto':
+        active_attr_text = args.attribution
+    else:
+        active_attr_text = attr_info['attribution_text']
+
+    attr_filter = None
+    system_font = find_system_font()
+    if active_attr_text:
+        if system_font:
+            attr_file = work / 'attribution.txt'
+            attr_file.write_text(active_attr_text, encoding='utf-8')
+            font_esc = str(system_font).replace('\\', '/').replace(':', '\\:')
+            text_esc = str(attr_file).replace('\\', '/').replace(':', '\\:')
+            attr_filter = (
+                f"drawtext=fontfile='{font_esc}':textfile='{text_esc}':"
+                f"fontsize=38:fontcolor=white@0.92:box=1:boxcolor=black@0.5:boxborderw=14:"
+                f"x=60:y=1450:enable='between(t,0.5,4.0)':"
+                f"alpha='if(lt(t,1.0),(t-0.5)*2,if(gt(t,3.5),(4.0-t)*2,1.0))'"
+            )
+        else:
+            print(json.dumps({
+                'attribution_warning': 'System font not found; skipping on-screen badge but applying metadata & guidance.'
+            }, ensure_ascii=False), flush=True)
+
+    meta_args = ['-map_metadata', '-1']
+    if active_attr_text or attr_info['name']:
+        meta_args.extend([
+            '-metadata', f"title={audio.stem}",
+            '-metadata', f"artist={attr_info['name'] or 'AI Music'}",
+            '-metadata', f"comment={active_attr_text or 'Created with AI'}",
+        ])
+
     for index, (image, count) in enumerate(zip(images, clip_frames)):
         clip = work / f'scene-{index:05d}.mp4'
         print(json.dumps({'scene': index + 1, 'total': len(images)}, ensure_ascii=False), flush=True)
@@ -158,13 +205,15 @@ def main():
         last_label = '0:v'
         for idx in range(1, len(images)):
             next_label = f'{idx}:v'
-            out_label = 'v' if idx == len(images) - 1 else f'x{idx}'
-            fmt = ',format=yuv420p' if idx == len(images) - 1 else ''
+            out_label = 'v_xfade' if (idx == len(images) - 1 and attr_filter) else ('v' if idx == len(images) - 1 else f'x{idx}')
+            fmt = ',format=yuv420p' if (idx == len(images) - 1 and not attr_filter) else ''
             o_sec = offsets[idx - 1] / 25
             filter_steps.append(
                 f'[{last_label}][{next_label}]xfade=transition=fade:duration={t_sec:.4f}:offset={o_sec:.4f}{fmt}[{out_label}]'
             )
             last_label = out_label
+        if attr_filter:
+            filter_steps.append(f'[v_xfade]{attr_filter},format=yuv420p[v]')
         filter_complex = ';'.join(filter_steps)
         cmd = [ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-n']
         for i in range(len(images)):
@@ -172,7 +221,7 @@ def main():
         cmd.extend([
             '-i', str(audio),
             '-filter_complex', filter_complex,
-            '-map', '[v]', '-map', f'{len(images)}:a:0', '-map_metadata', '-1',
+            '-map', '[v]', '-map', f'{len(images)}:a:0', *meta_args,
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22',
             '-pix_fmt', 'yuv420p', '-threads', '4',
             '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
@@ -183,11 +232,21 @@ def main():
         # Only generated ASCII filenames enter the concat syntax, never user paths.
         playlist = work / 'scenes.txt'
         playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(images))), encoding='utf-8')
-        run([ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
-             '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
-             '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '-1',
-             '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
-             '-movflags', '+faststart', str(stage)])
+        if attr_filter:
+            cmd = [ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+                   '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
+                   '-vf', f'{attr_filter},format=yuv420p',
+                   '-map', '0:v:0', '-map', '1:a:0', *meta_args,
+                   '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22', '-pix_fmt', 'yuv420p',
+                   '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
+                   '-movflags', '+faststart', str(stage)]
+        else:
+            cmd = [ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+                   '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
+                   '-map', '0:v:0', '-map', '1:a:0', *meta_args,
+                   '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
+                   '-movflags', '+faststart', str(stage)]
+        run(cmd)
     result = probe(stage, ffprobe_bin=ffprobe_bin)
     video = [s for s in result['streams'] if s['codec_type'] == 'video']
     sound = [s for s in result['streams'] if s['codec_type'] == 'audio']
@@ -212,13 +271,37 @@ def main():
     if output.stat().st_size != stage.stat().st_size:
         raise RuntimeError('Destination copy size mismatch')
     effective_transition = args.transition if (offsets is not None and len(images) > 1) else 'none'
-    print(json.dumps({'output': str(output), 'bytes': output.stat().st_size,
-                      'duration': float(result['format']['duration']),
-                      'resolution': '1080x1920', 'decode_verified': True,
-                      'transition': effective_transition,
-                      'delivery_status': 'ready_for_export',
-                      'android_indexing': 'not checked by this script',
-                      'report': str(work / 'verification.json')}, ensure_ascii=False))
+    report = {
+        'output': str(output),
+        'bytes': output.stat().st_size,
+        'duration': float(result['format']['duration']),
+        'resolution': '1080x1920',
+        'decode_verified': True,
+        'transition': effective_transition,
+        'attribution': {
+            'applied': bool(attr_filter),
+            'text': active_attr_text,
+            'generator': attr_info['generator'],
+            'caption': attr_info['caption_text'],
+            'ai_toggle_required': attr_info['requires_ai_toggle'],
+        },
+        'delivery_status': 'ready_for_export',
+        'android_indexing': 'not checked by this script',
+        'report': str(work / 'verification.json')
+    }
+    print(json.dumps(report, ensure_ascii=False))
+
+    if attr_info['requires_ai_toggle'] or active_attr_text:
+        print('\n' + '=' * 60)
+        print('🛡️ ЗАХИСТ ВІД БЛОКУВАННЯ / ЗАЩИТА ОТ БЛОКИРОВОК / ACCOUNT SAFETY:')
+        if attr_info['name']:
+            print(f"• Джерело / Источник / Source: {attr_info['name']}")
+        print('• TikTok / Shorts: обов’язково увімкніть перемикач «Створено за допомогою ШІ» /')
+        print('  обязательно включите тумблер «Создано с помощью ИИ» (AI-generated content).')
+        if attr_info['caption_text']:
+            print('• Рекомендований підпис / Рекомендуемое описание:')
+            print(f"  {attr_info['caption_text']}")
+        print('=' * 60 + '\n')
 
 
 if __name__ == '__main__':

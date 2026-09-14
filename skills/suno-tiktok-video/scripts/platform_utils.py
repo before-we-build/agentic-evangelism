@@ -3,6 +3,7 @@
 import ctypes
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -190,3 +191,220 @@ def find_audio_candidates(directory: Path | None = None) -> list[dict]:
 
     candidates.sort(key=lambda x: x['mtime'], reverse=True)
     return candidates
+
+
+GENERATOR_RULES = [
+    {
+        'id': 'suno',
+        'keywords': ['suno.com', 'suno'],
+        'pattern': r'(\bsuno\.com\b|\bsuno\b|suno_)',
+        'name': 'Suno AI',
+        'hashtags': '#sunoai',
+        'default_attribution': {
+            'ru': 'Музыка: Suno AI',
+            'uk': 'Музика: Suno AI',
+            'en': 'Music: Suno AI'
+        }
+    },
+    {
+        'id': 'udio',
+        'keywords': ['udio.com', 'udio'],
+        'pattern': r'(\budio\.com\b|\budio\b|udio_)',
+        'name': 'Udio AI',
+        'hashtags': '#udioai',
+        'default_attribution': {
+            'ru': 'Музыка: Udio AI',
+            'uk': 'Музика: Udio AI',
+            'en': 'Music: Udio AI'
+        }
+    },
+    {
+        'id': 'mubert',
+        'keywords': ['mubert.com', 'mubert'],
+        'pattern': r'(\bmubert\.com\b|\bmubert\b)',
+        'name': 'Mubert AI (mubert.com)',
+        'hashtags': '#mubert',
+        'default_attribution': {
+            'ru': 'Музыка: Mubert AI (mubert.com)',
+            'uk': 'Музика: Mubert AI (mubert.com)',
+            'en': 'Music: Mubert AI (mubert.com)'
+        }
+    },
+    {
+        'id': 'aiva',
+        'keywords': ['aiva.ai', 'aiva'],
+        'pattern': r'(\baiva\.ai\b|\baiva\b)',
+        'name': 'AIVA AI',
+        'hashtags': '#aiva',
+        'default_attribution': {
+            'ru': 'Музыка: AIVA AI',
+            'uk': 'Музика: AIVA AI',
+            'en': 'Music: AIVA AI'
+        }
+    },
+    {
+        'id': 'boomy',
+        'keywords': ['boomy.com', 'boomy'],
+        'pattern': r'(\bboomy\.com\b|\bboomy\b)',
+        'name': 'Boomy AI',
+        'hashtags': '#boomy',
+        'default_attribution': {
+            'ru': 'Музыка: Boomy AI',
+            'uk': 'Музика: Boomy AI',
+            'en': 'Music: Boomy AI'
+        }
+    },
+    {
+        'id': 'soundraw',
+        'keywords': ['soundraw.io', 'soundraw'],
+        'pattern': r'(\bsoundraw\.io\b|\bsoundraw\b)',
+        'name': 'Soundraw AI',
+        'hashtags': '#soundraw',
+        'default_attribution': {
+            'ru': 'Музыка: Soundraw AI',
+            'uk': 'Музика: Soundraw AI',
+            'en': 'Music: Soundraw AI'
+        }
+    },
+    {
+        'id': 'musicgen',
+        'keywords': ['musicgen', 'audiocraft'],
+        'pattern': r'(\bmusicgen\b|\baudiocraft\b)',
+        'name': 'Meta MusicGen',
+        'hashtags': '#musicgen #audiocraft',
+        'default_attribution': {
+            'ru': 'Музыка: Meta MusicGen',
+            'uk': 'Музика: Meta MusicGen',
+            'en': 'Music: Meta MusicGen'
+        }
+    },
+    {
+        'id': 'yue',
+        'keywords': ['yue', 'diff-rhythm', 'diffrhythm'],
+        'pattern': r'(\byue\b|yue_|\bdiff-rhythm\b|\bdiffrhythm\b)',
+        'name': 'YuE AI',
+        'hashtags': '#yueai',
+        'default_attribution': {
+            'ru': 'Музыка: YuE AI',
+            'uk': 'Музика: YuE AI',
+            'en': 'Music: YuE AI'
+        }
+    },
+]
+
+
+def detect_audio_attribution(
+    metadata: dict | None = None,
+    filename: str | Path | None = None,
+    lang: str = 'ru'
+) -> dict:
+    """Detect AI music generator and prepare attribution & TikTok disclosure data."""
+    lang_code = lang.lower() if lang else 'ru'
+    if lang_code not in ('ru', 'uk', 'en'):
+        lang_code = 'ru'
+
+    clues = []
+    if filename:
+        clues.append(Path(filename).name)
+
+    if metadata and isinstance(metadata, dict):
+        fmt_tags = metadata.get('format', {}).get('tags', {})
+        if isinstance(fmt_tags, dict):
+            for k, v in fmt_tags.items():
+                clues.append(f'{k}={v}')
+        for s in metadata.get('streams', []):
+            st_tags = s.get('tags', {})
+            if isinstance(st_tags, dict):
+                for k, v in st_tags.items():
+                    clues.append(f'{k}={v}')
+
+    search_text = ' '.join(clues).lower()
+
+    detected = None
+    for rule in GENERATOR_RULES:
+        if re.search(rule['pattern'], search_text, re.IGNORECASE):
+            detected = rule
+            break
+
+    if not detected:
+        return {
+            'generator': None,
+            'name': None,
+            'is_ai': False,
+            'attribution_text': None,
+            'caption_text': None,
+            'hashtags': '',
+            'requires_ai_toggle': False,
+            'requires_attribution': False,
+        }
+
+    name = detected['name']
+    attr_text = detected['default_attribution'].get(lang_code, detected['default_attribution']['ru'])
+    hashtags = detected['hashtags']
+
+    if lang_code == 'uk':
+        caption = f"Музика створена за допомогою {name}. {hashtags} #християнськіпісні"
+    elif lang_code == 'en':
+        caption = f"Music created with {name}. {hashtags} #christiansongs"
+    else:
+        caption = f"Музыка создана с помощью {name}. {hashtags} #христианскиепесни"
+
+    return {
+        'generator': detected['id'],
+        'name': name,
+        'is_ai': True,
+        'attribution_text': attr_text,
+        'caption_text': caption,
+        'hashtags': hashtags,
+        'requires_ai_toggle': True,
+        'requires_attribution': True,
+    }
+
+
+def find_system_font(platform: str | None = None) -> Path | None:
+    """Find an available TrueType/OpenType system font for FFmpeg drawtext."""
+    plat = platform or detect_platform()
+    candidates: list[Path] = []
+
+    if plat in ('android_termux', 'android_proot'):
+        candidates = [
+            Path('/system/fonts/Roboto-Regular.ttf'),
+            Path('/system/fonts/DroidSans.ttf'),
+            Path.home() / '.termux' / 'font.ttf',
+        ]
+    elif plat == 'macos':
+        candidates = [
+            Path('/System/Library/Fonts/Supplemental/Arial.ttf'),
+            Path('/System/Library/Fonts/Helvetica.ttc'),
+            Path('/Library/Fonts/Arial.ttf'),
+            Path('/System/Library/Fonts/SFNS.ttf'),
+        ]
+    elif plat == 'windows':
+        windir = os.environ.get('WINDIR', 'C:\\Windows')
+        fonts_dir = Path(windir) / 'Fonts'
+        candidates = [
+            fonts_dir / 'arial.ttf',
+            fonts_dir / 'calibri.ttf',
+            fonts_dir / 'segoeui.ttf',
+        ]
+    elif plat in ('linux', 'wsl'):
+        candidates = [
+            Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+            Path('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'),
+            Path('/usr/share/fonts/truetype/freefont/FreeSans.ttf'),
+        ]
+    else:
+        candidates = [
+            Path('/System/Library/Fonts/Supplemental/Arial.ttf'),
+            Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+            Path('/system/fonts/Roboto-Regular.ttf'),
+        ]
+
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate
+        except (OSError, PermissionError):
+            continue
+    return None
+

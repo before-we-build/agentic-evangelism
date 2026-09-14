@@ -81,6 +81,66 @@ class PlatformUtilsTests(unittest.TestCase):
             self.assertEqual(candidates[0]['name'], 'second.wav')
             self.assertEqual(candidates[1]['name'], 'first.mp3')
 
+    def test_detect_audio_attribution_suno(self):
+        res = platform_utils.detect_audio_attribution({'format': {'tags': {'artist': 'Suno'}}}, filename='song.mp3', lang='ru')
+        self.assertEqual(res['generator'], 'suno')
+        self.assertTrue(res['is_ai'])
+        self.assertEqual(res['attribution_text'], 'Музыка: Suno AI')
+        self.assertIn('#sunoai', res['caption_text'])
+        self.assertTrue(res['requires_ai_toggle'])
+
+        # Ukrainian
+        res_uk = platform_utils.detect_audio_attribution(filename='suno_test.mp3', lang='uk')
+        self.assertEqual(res_uk['attribution_text'], 'Музика: Suno AI')
+        self.assertIn('створена за допомогою', res_uk['caption_text'])
+
+        # English
+        res_en = platform_utils.detect_audio_attribution({'format': {'tags': {'comment': 'https://suno.com/song/123'}}}, lang='en')
+        self.assertEqual(res_en['attribution_text'], 'Music: Suno AI')
+        self.assertIn('Music created with Suno AI', res_en['caption_text'])
+
+    def test_detect_audio_attribution_all_generators(self):
+        cases = [
+            ('udio', {'format': {'tags': {'artist': 'Udio'}}}, 'Музыка: Udio AI'),
+            ('mubert', {'format': {'tags': {'comment': 'mubert.com'}}}, 'Музыка: Mubert AI (mubert.com)'),
+            ('aiva', {'format': {'tags': {'album': 'AIVA Soundtrack'}}}, 'Музыка: AIVA AI'),
+            ('boomy', {'format': {'tags': {'artist': 'Boomy Artist'}}}, 'Музыка: Boomy AI'),
+            ('soundraw', {'format': {'tags': {'comment': 'https://soundraw.io'}}}, 'Музыка: Soundraw AI'),
+            ('musicgen', {'format': {'tags': {'encoder': 'Audiocraft / MusicGen'}}}, 'Музыка: Meta MusicGen'),
+            ('yue', {}, 'Музыка: YuE AI', 'yue_sample.mp3'),
+        ]
+        for item in cases:
+            gen_id, meta, expected_text = item[0], item[1], item[2]
+            fname = item[3] if len(item) > 3 else None
+            res = platform_utils.detect_audio_attribution(meta, filename=fname, lang='ru')
+            self.assertEqual(res['generator'], gen_id, f"Failed for {gen_id}")
+            self.assertEqual(res['attribution_text'], expected_text)
+            self.assertTrue(res['requires_ai_toggle'])
+            self.assertTrue(res['requires_attribution'])
+
+    def test_detect_audio_attribution_clean_audio(self):
+        res = platform_utils.detect_audio_attribution(
+            {'format': {'tags': {'artist': 'Church Choir', 'title': 'Amazing Grace'}}},
+            filename='hymn.mp3'
+        )
+        self.assertIsNone(res['generator'])
+        self.assertFalse(res['is_ai'])
+        self.assertIsNone(res['attribution_text'])
+        self.assertFalse(res['requires_attribution'])
+
+    def test_find_system_font(self):
+        font = platform_utils.find_system_font()
+        # On mac, Arial or Helvetica should be found
+        if sys.platform == 'darwin':
+            self.assertIsNotNone(font)
+            self.assertTrue(font.is_file())
+
+        # Test mocked android platform
+        with patch('platform_utils.detect_platform', return_value='android_termux'), \
+             patch.object(Path, 'is_file', return_value=True):
+            f = platform_utils.find_system_font('android_termux')
+            self.assertEqual(f, Path('/system/fonts/Roboto-Regular.ttf'))
+
 
 if __name__ == '__main__':
     unittest.main()
