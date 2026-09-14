@@ -41,7 +41,7 @@ Review the Groq transcript against the embedded or user-supplied lyrics, unless 
 
 ## Prepare images
 
-If the host exposes a built-in image generation tool, use it with the available `dual-image-pipeline` skill. That tool is a separate host capability; installing this skill does not enable it. For high-speed storyboard generation across scenes, `dual-image-pipeline` runs Antigravity and Codex concurrently with automatic failover. If unavailable or persistently failing, explain the limitation and obtain explicit consent before a separate API/CLI workflow, installation, or potentially paid fallback. User-supplied images are another option. Do not request API secrets in chat.
+If the host exposes a built-in image tool, read the installed `imagegen` and `dual-image-pipeline` skills. Use the built-in `image_gen` tool with the dual skill's anchor-first and bounded parallel-batch strategy. The dual skill organizes requests; its `scripts/generate.py` is a separate, opt-in CLI route and cannot call the built-in tool. Do not infer two active providers from an installed skill or CLI. If the built-in tool is unavailable, use supplied images or obtain explicit consent before another API/CLI route, installation, or possible new cost. Do not request secrets in chat.
 
 Create a distinct image per main subidea; alternate related views for long passages. Assemble prompts using the modular formula:
 `[Scene Subject & Action] + [Character Anchor] + [Visual Bible: medium, palette, surface] + [Setting, Wardrobe & Physical Lighting] + [Shot Scale 9:16] + [Safe Zone: x=0.10…0.78, y=0.12…0.72] + [Applicable Constraints compiled for target tool]`.

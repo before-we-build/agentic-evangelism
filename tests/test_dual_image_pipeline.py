@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATE_SCRIPT = ROOT / "skills" / "dual-image-pipeline" / "scripts" / "generate.py"
@@ -123,6 +124,29 @@ class DualImagePipelineTests(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue((out_dir / "sc_01.png").is_file())
+
+    def test_live_cli_requires_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "scene.png"
+            proc = subprocess.run(
+                [sys.executable, str(GENERATE_SCRIPT), "--prompt", "Sunrise", "--output", str(output)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("--allow-external-cli", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_failed_cli_provider_does_not_contact_free_fallback(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = generate.PipelineRunner(mock_providers=["agy"])
+            with patch.object(generate, "call_agy_cli", return_value=False), patch.object(
+                generate, "call_free_pollinations"
+            ) as free_call:
+                result = runner.generate_scene(
+                    {"id": "scene", "prompt": "Sunrise", "image": "scene.png"}, "agy", Path(tmpdir)
+                )
+            self.assertEqual(result["status"], "failed")
+            free_call.assert_not_called()
 
     def test_canonical_assets_storyboard_generates_unique_assets(self):
         """Test that Schema v2 storyboards with 'assets' generate distinct assets only once."""

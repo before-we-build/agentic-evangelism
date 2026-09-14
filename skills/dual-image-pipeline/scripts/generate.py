@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """
-Dual-Vendor High-Speed Image Generation Pipeline with Financial Adaptability.
-
-Wisely adapts to the user's financial abilities:
-- Tier 1 (Both AGY + Codex available): Parallel dual-vendor split for maximum speed.
-- Tier 2 (Single vendor available): Routes cleanly through the available engine.
-- Tier 3 (Zero-cost / No subscriptions): 100% free terminal generation via Pollinations.ai FLUX.
+Optional legacy CLI runner. The host's built-in image tool is separate.
+Live external routes require explicit opt-in and current provider verification.
 """
 
 from __future__ import annotations
@@ -58,27 +54,19 @@ def check_agy_available() -> bool:
     agy_bin = os.environ.get("AGY_BIN", "agy")
     try:
         proc = subprocess.run(
-            [agy_bin, "--version"],
+            [agy_bin, "generate-image", "--help"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=2,
         )
-        return proc.returncode == 0
+        return proc.returncode == 0 and b"generate-image" in proc.stdout + proc.stderr
     except Exception:
-        # Also check if running directly inside an active Antigravity session
-        return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTIGRAVITY_AGENT"))
+        return False
 
 
 def detect_available_providers(force_free: bool = False) -> List[str]:
-    """
-    Wisely detect available providers according to the user's environment:
-    - If force_free is True -> ['free']
-    - If both AGY and Codex -> ['agy', 'codex', 'free']
-    - If only AGY -> ['agy', 'free']
-    - If only Codex -> ['codex', 'free']
-    - If neither -> ['free'] (Zero-cost open community tier)
-    """
+    """Probe legacy CLI candidates; caller must authorize external routes."""
     if force_free:
         return ["free"]
 
@@ -128,10 +116,7 @@ def is_valid_image_file(path: Path) -> bool:
 
 
 def call_free_pollinations(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
-    """
-    100% Free terminal image generation via Pollinations.ai (FLUX.1 model).
-    Requires zero money, zero accounts, zero API keys, and zero subscriptions.
-    """
+    """Use an external Pollinations endpoint only after current terms are checked."""
     dim_map = {
         "9:16": (768, 1376),
         "16:9": (1376, 768),
@@ -160,7 +145,7 @@ def call_free_pollinations(prompt: str, output_path: Path, aspect_ratio: str = "
 
 
 def call_codex_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
-    """Generate image via Codex CLI (GPT-Image 2.5)."""
+    """Experimental CLI route; a Codex login alone does not provide image output."""
     if not os.path.exists(CODEX_BIN):
         return False
 
@@ -198,7 +183,7 @@ def call_codex_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -
 
 
 def call_agy_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
-    """Generate image via AGY CLI (Gemini 3.1 Flash Image)."""
+    """Experimental CLI route requiring an actual generate-image subcommand."""
     agy_bin = os.environ.get("AGY_BIN", "agy")
     cmd = [
         agy_bin,
@@ -229,6 +214,8 @@ def partition_scenes(
     If dual providers (e.g. AGY + Codex), alternates between them for speed.
     If single provider or free only, routes all to that primary provider.
     """
+    if not providers:
+        raise ValueError("No CLI image provider is available")
     primary_providers = [p for p in providers if p != "free"] or ["free"]
     assignments = []
     for idx, scene in enumerate(scenes):
@@ -246,6 +233,7 @@ class PipelineRunner:
         free_workers: int = 2,
         aspect_ratio: str = "9:16",
         force_free: bool = False,
+        allow_free_fallback: bool = False,
         dry_run: bool = False,
         mock_failures: Optional[List[str]] = None,
         mock_providers: Optional[List[str]] = None,
@@ -256,12 +244,16 @@ class PipelineRunner:
         self.free_workers = free_workers
         self.aspect_ratio = aspect_ratio
         self.force_free = force_free
+        self.allow_free_fallback = allow_free_fallback
         self.dry_run = dry_run
         self.mock_failures = set(mock_failures or [])
-        self.active_providers = (
-            mock_providers if mock_providers is not None
-            else detect_available_providers(force_free=self.force_free)
-        )
+        if mock_providers is not None:
+            self.active_providers = mock_providers
+        else:
+            detected = detect_available_providers(force_free=self.force_free)
+            self.active_providers = detected if (self.force_free or self.allow_free_fallback) else [
+                provider for provider in detected if provider != "free"
+            ]
 
     def generate_scene(
         self,
@@ -285,14 +277,11 @@ class PipelineRunner:
 
         compiled_prompt = compile_prompt(str(prompt), self.style_anchor)
 
-        # Build fallback order starting from preferred provider, then remaining active, then free
+        # Fall back only among explicitly enabled providers.
         order = [preferred_provider]
         for p in self.active_providers:
             if p not in order:
                 order.append(p)
-        if "free" not in order:
-            order.append("free")
-
         for provider in order:
             if f"{provider}:{scene_id}" in self.mock_failures:
                 # Simulated failover trigger for tests
@@ -421,7 +410,7 @@ class PipelineRunner:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Dual-vendor and zero-cost parallel image generator (AGY, Codex, Free Pollinations)."
+        description="Optional legacy external CLI image generator; not the host image tool."
     )
     parser.add_argument("--storyboard", type=Path, help="Path to storyboard JSON file")
     parser.add_argument("--output-dir", type=Path, help="Output directory for storyboard images")
@@ -429,12 +418,18 @@ def main():
     parser.add_argument("--output", type=Path, help="Output file path for single image mode")
     parser.add_argument("--aspect-ratio", type=str, default="9:16", choices=["9:16", "16:9", "1:1"])
     parser.add_argument("--style-anchor", type=str, default=DEFAULT_STYLE_ANCHOR)
-    parser.add_argument("--free", action="store_true", help="Force zero-cost free generation (no subscriptions needed)")
+    parser.add_argument("--free", action="store_true", help="Select external Pollinations route; verify its current terms first")
     parser.add_argument("--agy-workers", type=int, default=3)
     parser.add_argument("--codex-workers", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true", help="Simulate generation without calling APIs")
+    parser.add_argument("--allow-external-cli", action="store_true",
+                        help="Explicit opt-in to live external CLI/API calls")
+    parser.add_argument("--allow-free-fallback", action="store_true",
+                        help="Permit Pollinations if the selected CLI provider fails")
 
     args = parser.parse_args()
+    if not args.dry_run and not args.allow_external_cli:
+        parser.error("Live CLI generation requires --allow-external-cli and user authorization; use the host image tool by default")
 
     if not args.storyboard and not args.prompt:
         parser.error("Either --storyboard or --prompt must be provided")
@@ -445,8 +440,11 @@ def main():
         codex_workers=args.codex_workers,
         aspect_ratio=args.aspect_ratio,
         force_free=args.free,
+        allow_free_fallback=args.allow_free_fallback,
         dry_run=args.dry_run,
     )
+    if not args.dry_run and not runner.active_providers:
+        parser.error("No verified CLI image provider; use the host image tool or an authorized external route")
 
     if args.storyboard:
         out_dir = args.output_dir or args.storyboard.resolve().parent / "images"
