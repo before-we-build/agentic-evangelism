@@ -51,13 +51,13 @@ codex
 
 Copy the message below **into your conversation with Codex**. Replace `My song.mp3` with your file's actual name:
 
-> Use $suno-tiktok-video. My song “My song.mp3” is in Downloads. Make a video for the whole song, with pictures based on its meaning. If you need lyrics or pictures, explain what I should do. Save the video in Downloads. Do not publish it.
+> Use $suno-tiktok-video. My song “My song.mp3” is in Downloads. Make a video for the whole song, with pictures based on its meaning and word-highlighted karaoke. If you need lyrics or pictures, explain what I should do. Save the video in Downloads. Do not publish it.
 
 Codex should show you the file and explain which pictures it will prepare. If it asks for the lyrics, send them. If it asks you to choose between versions, name the one you want.
 
-When a permission request appears, read the action and filename. Allow only what is needed for your video. If anything is unclear, ask for an explanation.
+On a configured phone, one narrowly allowed Codex command handles repeated local build and verification steps. Restart Codex after changing its rule. Image generation, a Groq request, or host restrictions may still need separate permission; new spending and publication always need your decision. If a request appears, read the action and filename.
 
-The pictures will be still, and they will change roughly with the meaning of the song, without matching the words exactly. Transitions between pictures are smooth crossfades by default. If you prefer sharp cuts without fades, you can ask for simple cuts (`--transition none`). The whole song will play.
+The pictures will be still and change roughly with the song's meaning. Karaoke words are checked against the recording separately and highlighted in time. Transitions between pictures are smooth crossfades by default. If you prefer sharp cuts without fades, you can ask for simple cuts (`--transition none`). The whole song will play.
 
 **Tip for style and characters:** If your song is story-driven or you prefer a specific art style, specify it in your request, for example:
 > Create illustrations in a unified realistic digital painting style. The protagonist is a traveler around 40 years old in a navy jacket and ochre scarf; keep his appearance and clothing consistent across all scenes featuring him.
