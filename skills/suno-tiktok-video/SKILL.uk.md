@@ -66,7 +66,7 @@ python3 scripts/build_video.py --audio '/absolute/song.mp3' --storyboard '/absol
 ## Доставка та доступність на різних платформах
 
 Ознайомтеся з інструкцією для вашої операційної системи:
-- **Android:** [інструкція Android](references/android.uk.md) — індексація MediaStore через ADB, broadcast або застосунок «Файли».
+- **Android:** [інструкція Android](references/android.uk.md) — сканування через Termux `am` без ADB з перевіркою вибору TikTok; уже підключений ADB може запитати MediaStore як резервний спосіб.
 - **Windows:** [інструкція Windows](references/windows.uk.md) — розташування папки Завантажень, екранування шляхів і ручне завантаження.
 - **macOS:** [інструкція macOS](references/macos.uk.md) — інструменти Homebrew, попередній перегляд у QuickTime та ручне завантаження.
 - **Linux:** [інструкція Linux](references/linux.uk.md) — пакетні менеджери, папка XDG Завантажень та ручне завантаження.

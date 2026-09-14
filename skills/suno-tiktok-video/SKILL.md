@@ -71,7 +71,7 @@ Use a clean filename without problematic characters for the target platform. On 
 ## Platform delivery and media availability
 
 Read the platform reference for your operating system:
-- **Android:** [references/android.md](references/android.md) — MediaStore indexing via ADB, broadcast, or Files app.
+- **Android:** [references/android.md](references/android.md) — scan through Termux `am` without ADB, then check TikTok's picker; an existing ADB connection can query MediaStore as a fallback.
 - **Windows:** [references/windows.md](references/windows.md) — Downloads folder location, path quoting, and manual upload.
 - **macOS:** [references/macos.md](references/macos.md) — Homebrew tools, QuickTime preview, and manual upload.
 - **Linux:** [references/linux.md](references/linux.md) — Distribution packages, XDG Downloads, and manual upload.

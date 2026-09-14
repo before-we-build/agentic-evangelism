@@ -56,7 +56,17 @@ Keep Termux open during a long render. If Android repeatedly stops it in the bac
 
 First open the MP4 from **Files → Downloads**. Close and reopen TikTok's picker, select Videos or Browse/Downloads, and search its exact filename. A short filename helps finding it; Cyrillic names were not proven to cause the recorded problem.
 
-If that does not work, an Android media scan may help. ADB is an optional tool for talking to your own phone, not a requirement for creating the video. The following advanced route was used on the project phone; another Android version may behave differently.
+If that does not work, request a scan without ADB. On the phone, run the command below in Termux or Ubuntu/PRoot with the Termux path mounted, replacing `TikTok_song.mp4` with your actual output filename:
+
+```sh
+/data/data/com.termux/files/usr/bin/am broadcast --user 0 \
+  -a android.intent.action.MEDIA_SCANNER_SCAN_FILE \
+  -d file:///storage/emulated/0/Download/TikTok_song.mp4
+```
+
+Expected output: `Broadcast sent without waiting for result`. Wait briefly, reopen TikTok's picker, and look under Videos or Downloads. On the project phone the user confirmed that `TikTok_Blazhenni.mp4` was visible after this request. The response alone does not confirm indexing; if the file is still absent, use Files or the optional ADB route below. See the [Android skill reference](../../skills/suno-tiktok-video/references/android.md) for filenames needing an encoded URI.
+
+ADB is an optional fallback for a phone already connected to it. The following advanced route was also used on the project phone; another Android version may behave differently.
 
 ### Optional: connect the phone to itself with ADB
 
