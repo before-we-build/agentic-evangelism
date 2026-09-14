@@ -27,9 +27,11 @@ def check(root=ROOT):
                 commands[lang] = re.findall(r'```sh\n(.*?)\n```', p.read_text(), re.S)
         if len(commands) == 3 and not all(v == commands['en'] for v in commands.values()):
             errors.append(f'{name}: shell commands differ between languages')
-    skill = root / 'skills' / 'suno-tiktok-video'
-    for base in (skill / 'SKILL.md', skill / 'references' / 'android.md',
-                 skill / 'references' / 'storyboard.md'):
+    suno_skill = root / 'skills' / 'suno-tiktok-video'
+    dual_skill = root / 'skills' / 'dual-image-pipeline'
+    for base in (suno_skill / 'SKILL.md', suno_skill / 'references' / 'android.md',
+                 suno_skill / 'references' / 'storyboard.md',
+                 dual_skill / 'SKILL.md', dual_skill / 'references' / 'providers.md'):
         for suffix in ('', '.ru', '.uk'):
             p = base.with_name(base.stem + suffix + '.md')
             if not p.is_file():
