@@ -25,11 +25,29 @@ class DualImagePipelineTests(unittest.TestCase):
         compiled = generate.compile_prompt(scene, "")
         self.assertEqual(compiled, "Mountain river flowing")
 
-    def test_partition_scenes_fair_split(self):
-        scenes = [{"id": f"scene_{i}"} for i in range(5)]
-        agy, codex = generate.partition_scenes(scenes)
-        self.assertEqual([s["id"] for s in agy], ["scene_0", "scene_2", "scene_4"])
-        self.assertEqual([s["id"] for s in codex], ["scene_1", "scene_3"])
+    def test_detect_available_providers_force_free(self):
+        providers = generate.detect_available_providers(force_free=True)
+        self.assertEqual(providers, ["free"])
+
+    def test_partition_scenes_fair_split_dual(self):
+        scenes = [{"id": f"scene_{i}"} for i in range(4)]
+        assignments = generate.partition_scenes(scenes, ["agy", "codex", "free"])
+        self.assertEqual(assignments[0][1], "agy")
+        self.assertEqual(assignments[1][1], "codex")
+        self.assertEqual(assignments[2][1], "agy")
+        self.assertEqual(assignments[3][1], "codex")
+
+    def test_partition_scenes_single_vendor(self):
+        scenes = [{"id": f"scene_{i}"} for i in range(3)]
+        assignments = generate.partition_scenes(scenes, ["agy", "free"])
+        for _, provider in assignments:
+            self.assertEqual(provider, "agy")
+
+    def test_partition_scenes_free_only(self):
+        scenes = [{"id": f"scene_{i}"} for i in range(3)]
+        assignments = generate.partition_scenes(scenes, ["free"])
+        for _, provider in assignments:
+            self.assertEqual(provider, "free")
 
     def test_dry_run_storyboard_generates_all_assets(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -43,7 +61,10 @@ class DualImagePipelineTests(unittest.TestCase):
             ]
             storyboard.write_text(json.dumps({"scenes": scenes_data}), encoding="utf-8")
 
-            runner = generate.PipelineRunner(dry_run=True)
+            runner = generate.PipelineRunner(
+                dry_run=True,
+                mock_providers=["agy", "codex", "free"],
+            )
             result = runner.run_storyboard(storyboard, out_dir)
 
             self.assertEqual(result["total_scenes"], 4)
@@ -53,16 +74,16 @@ class DualImagePipelineTests(unittest.TestCase):
                 self.assertTrue(img.is_file())
                 self.assertTrue(img.stat().st_size > 10)
 
-    def test_automatic_failover_when_primary_fails(self):
+    def test_automatic_failover_down_to_free_tier(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             work = Path(tmpdir)
             out_dir = work / "images"
 
-            # Primary provider for even scene (0) is 'agy'.
-            # We simulate that 'agy:sc_0' fails.
+            # Simulate failure on both primary providers (agy and codex)
             runner = generate.PipelineRunner(
                 dry_run=True,
-                mock_failures=["agy:sc_0"],
+                mock_failures=["agy:sc_0", "codex:sc_0"],
+                mock_providers=["agy", "codex", "free"],
             )
 
             res = runner.generate_scene(
@@ -72,11 +93,11 @@ class DualImagePipelineTests(unittest.TestCase):
             )
 
             self.assertEqual(res["status"], "success")
-            # Should have failed over to codex
-            self.assertEqual(res["provider"], "codex")
+            # Should have failed over down to free tier
+            self.assertEqual(res["provider"], "free")
             self.assertTrue((out_dir / "sc_0.png").is_file())
 
-    def test_cli_dry_run_subprocess(self):
+    def test_cli_dry_run_subprocess_with_free_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             work = Path(tmpdir)
             storyboard = work / "storyboard.json"
@@ -93,6 +114,7 @@ class DualImagePipelineTests(unittest.TestCase):
                     str(GENERATE_SCRIPT),
                     "--storyboard", str(storyboard),
                     "--output-dir", str(out_dir),
+                    "--free",
                     "--dry-run",
                 ],
                 stdout=subprocess.PIPE,

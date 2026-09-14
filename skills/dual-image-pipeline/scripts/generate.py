@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Dual-Vendor High-Speed Image Generation Pipeline.
+Dual-Vendor High-Speed Image Generation Pipeline with Financial Adaptability.
 
-Dispatches generation jobs concurrently across Antigravity (Gemini Flash Image)
-and OpenAI Codex (GPT-Image 2.5 Flare/Sunburst) pools with automatic failover.
+Wisely adapts to the user's financial abilities:
+- Tier 1 (Both AGY + Codex available): Parallel dual-vendor split for maximum speed.
+- Tier 2 (Single vendor available): Routes cleanly through the available engine.
+- Tier 3 (Zero-cost / No subscriptions): 100% free terminal generation via Pollinations.ai FLUX.
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import urllib.parse
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 CODEX_BIN = os.environ.get("CODEX_BIN", "/Applications/ChatGPT.app/Contents/Resources/codex")
@@ -42,11 +46,52 @@ def compile_prompt(scene_prompt: str, style_anchor: str) -> str:
 
 
 def check_codex_auth() -> bool:
-    """Check whether Codex CLI has a valid authentication configuration."""
+    """Check whether Codex CLI is installed and configured."""
     auth_file = PERSONAL_HOME / "auth.json"
     if auth_file.is_file() and auth_file.stat().st_size > 10:
         return True
     return os.path.exists(CODEX_BIN) and os.access(CODEX_BIN, os.X_OK)
+
+
+def check_agy_available() -> bool:
+    """Check whether Antigravity agent or CLI is available in current environment."""
+    agy_bin = os.environ.get("AGY_BIN", "agy")
+    try:
+        proc = subprocess.run(
+            [agy_bin, "--version"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=2,
+        )
+        return proc.returncode == 0
+    except Exception:
+        # Also check if running directly inside an active Antigravity session
+        return bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTIGRAVITY_AGENT"))
+
+
+def detect_available_providers(force_free: bool = False) -> List[str]:
+    """
+    Wisely detect available providers according to the user's environment:
+    - If force_free is True -> ['free']
+    - If both AGY and Codex -> ['agy', 'codex', 'free']
+    - If only AGY -> ['agy', 'free']
+    - If only Codex -> ['codex', 'free']
+    - If neither -> ['free'] (Zero-cost open community tier)
+    """
+    if force_free:
+        return ["free"]
+
+    has_agy = check_agy_available()
+    has_codex = check_codex_auth()
+
+    if has_agy and has_codex:
+        return ["agy", "codex", "free"]
+    if has_agy:
+        return ["agy", "free"]
+    if has_codex:
+        return ["codex", "free"]
+    return ["free"]
 
 
 def generate_single_mock(output_path: Path) -> bool:
@@ -56,15 +101,46 @@ def generate_single_mock(output_path: Path) -> bool:
     return True
 
 
+def call_free_pollinations(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
+    """
+    100% Free terminal image generation via Pollinations.ai (FLUX.1 model).
+    Requires zero money, zero accounts, zero API keys, and zero subscriptions.
+    """
+    dim_map = {
+        "9:16": (768, 1376),
+        "16:9": (1376, 768),
+        "1:1": (1024, 1024),
+    }
+    width, height = dim_map.get(aspect_ratio, (768, 1376))
+
+    encoded_prompt = urllib.parse.quote(prompt)
+    url = f"https://pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&model=flux&nologo=true"
+
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "agentic-evangelism/dual-image-pipeline"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as response:
+            if response.status == 200:
+                data = response.read()
+                if len(data) > 1000:
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_bytes(data)
+                    return True
+        return False
+    except Exception:
+        return False
+
+
 def call_codex_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
-    """Generate image via Codex CLI."""
+    """Generate image via Codex CLI (GPT-Image 2.5)."""
     if not os.path.exists(CODEX_BIN):
         return False
 
     env = os.environ.copy()
     env["CODEX_HOME"] = str(PERSONAL_HOME)
 
-    # Resolution mapping for GPT-Image 2.5
     size_map = {
         "9:16": "1024x1792",
         "16:9": "1792x1024",
@@ -96,7 +172,7 @@ def call_codex_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -
 
 
 def call_agy_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
-    """Generate image via AGY CLI if available."""
+    """Generate image via AGY CLI (Gemini 3.1 Flash Image)."""
     agy_bin = os.environ.get("AGY_BIN", "agy")
     cmd = [
         agy_bin,
@@ -118,19 +194,21 @@ def call_agy_cli(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> 
         return False
 
 
-def partition_scenes(scenes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def partition_scenes(
+    scenes: List[Dict[str, Any]],
+    providers: List[str],
+) -> List[Tuple[Dict[str, Any], str]]:
     """
-    Partition scenes between AGY and Codex pools.
-    Even-indexed scenes go to AGY, odd-indexed go to Codex.
+    Distribute scenes across active providers.
+    If dual providers (e.g. AGY + Codex), alternates between them for speed.
+    If single provider or free only, routes all to that primary provider.
     """
-    agy_batch = []
-    codex_batch = []
+    primary_providers = [p for p in providers if p != "free"] or ["free"]
+    assignments = []
     for idx, scene in enumerate(scenes):
-        if idx % 2 == 0:
-            agy_batch.append(scene)
-        else:
-            codex_batch.append(scene)
-    return agy_batch, codex_batch
+        provider = primary_providers[idx % len(primary_providers)]
+        assignments.append((scene, provider))
+    return assignments
 
 
 class PipelineRunner:
@@ -139,16 +217,25 @@ class PipelineRunner:
         style_anchor: str = DEFAULT_STYLE_ANCHOR,
         agy_workers: int = 3,
         codex_workers: int = 2,
+        free_workers: int = 2,
         aspect_ratio: str = "9:16",
+        force_free: bool = False,
         dry_run: bool = False,
         mock_failures: Optional[List[str]] = None,
+        mock_providers: Optional[List[str]] = None,
     ):
         self.style_anchor = style_anchor
         self.agy_workers = agy_workers
         self.codex_workers = codex_workers
+        self.free_workers = free_workers
         self.aspect_ratio = aspect_ratio
+        self.force_free = force_free
         self.dry_run = dry_run
         self.mock_failures = set(mock_failures or [])
+        self.active_providers = (
+            mock_providers if mock_providers is not None
+            else detect_available_providers(force_free=self.force_free)
+        )
 
     def generate_scene(
         self,
@@ -163,11 +250,15 @@ class PipelineRunner:
         rel_or_abs = Path(scene.get("image", f"{scene_id}.png"))
         output_path = rel_or_abs if rel_or_abs.is_absolute() else output_dir / rel_or_abs
 
-        providers_order = (
-            ["agy", "codex"] if preferred_provider == "agy" else ["codex", "agy"]
-        )
+        # Build fallback order starting from preferred provider, then remaining active, then free
+        order = [preferred_provider]
+        for p in self.active_providers:
+            if p not in order:
+                order.append(p)
+        if "free" not in order:
+            order.append("free")
 
-        for provider in providers_order:
+        for provider in order:
             if f"{provider}:{scene_id}" in self.mock_failures:
                 # Simulated failover trigger for tests
                 continue
@@ -176,8 +267,12 @@ class PipelineRunner:
                 success = generate_single_mock(output_path)
             elif provider == "agy":
                 success = call_agy_cli(compiled_prompt, output_path, self.aspect_ratio)
-            else:
+            elif provider == "codex":
                 success = call_codex_cli(compiled_prompt, output_path, self.aspect_ratio)
+            elif provider == "free":
+                success = call_free_pollinations(compiled_prompt, output_path, self.aspect_ratio)
+            else:
+                success = False
 
             if success:
                 return {
@@ -187,7 +282,7 @@ class PipelineRunner:
                     "output": str(output_path),
                 }
 
-        # Fallback to local stub if dry run or both failed
+        # Fallback to local stub if dry run
         if self.dry_run:
             generate_single_mock(output_path)
             return {
@@ -202,7 +297,7 @@ class PipelineRunner:
             "provider": None,
             "status": "failed",
             "output": str(output_path),
-            "error": "All providers exhausted or rate-limited",
+            "error": "All available providers exhausted or rate-limited",
         }
 
     def run_storyboard(
@@ -216,20 +311,15 @@ class PipelineRunner:
         if not scenes:
             raise ValueError("Storyboard contains no scenes")
 
-        agy_scenes, codex_scenes = partition_scenes(scenes)
+        assignments = partition_scenes(scenes, self.active_providers)
         results: List[Dict[str, Any]] = []
 
-        total_workers = self.agy_workers + self.codex_workers
+        total_workers = max(1, self.agy_workers + self.codex_workers)
         with concurrent.futures.ThreadPoolExecutor(max_workers=total_workers) as executor:
-            future_to_scene = {}
-
-            for sc in agy_scenes:
-                fut = executor.submit(self.generate_scene, sc, "agy", output_dir)
-                future_to_scene[fut] = sc
-
-            for sc in codex_scenes:
-                fut = executor.submit(self.generate_scene, sc, "codex", output_dir)
-                future_to_scene[fut] = sc
+            future_to_scene = {
+                executor.submit(self.generate_scene, sc, prov, output_dir): sc
+                for sc, prov in assignments
+            }
 
             for future in concurrent.futures.as_completed(future_to_scene):
                 res = future.result()
@@ -249,12 +339,13 @@ class PipelineRunner:
             "total_scenes": len(scenes),
             "completed": success_count,
             "results": results,
+            "active_providers": self.active_providers,
         }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Dual-vendor parallel high-speed image generator (AGY + Codex)."
+        description="Dual-vendor and zero-cost parallel image generator (AGY, Codex, Free Pollinations)."
     )
     parser.add_argument("--storyboard", type=Path, help="Path to storyboard JSON file")
     parser.add_argument("--output-dir", type=Path, help="Output directory for storyboard images")
@@ -262,6 +353,7 @@ def main():
     parser.add_argument("--output", type=Path, help="Output file path for single image mode")
     parser.add_argument("--aspect-ratio", type=str, default="9:16", choices=["9:16", "16:9", "1:1"])
     parser.add_argument("--style-anchor", type=str, default=DEFAULT_STYLE_ANCHOR)
+    parser.add_argument("--free", action="store_true", help="Force zero-cost free generation (no subscriptions needed)")
     parser.add_argument("--agy-workers", type=int, default=3)
     parser.add_argument("--codex-workers", type=int, default=2)
     parser.add_argument("--dry-run", action="store_true", help="Simulate generation without calling APIs")
@@ -276,6 +368,7 @@ def main():
         agy_workers=args.agy_workers,
         codex_workers=args.codex_workers,
         aspect_ratio=args.aspect_ratio,
+        force_free=args.free,
         dry_run=args.dry_run,
     )
 
@@ -288,9 +381,10 @@ def main():
     else:
         if not args.output:
             parser.error("--output is required when --prompt is specified")
+        preferred = runner.active_providers[0] if runner.active_providers else "free"
         res = runner.generate_scene(
             {"id": "single", "prompt": args.prompt, "image": str(args.output)},
-            preferred_provider="agy",
+            preferred_provider=preferred,
             output_dir=args.output.parent,
         )
         if res["status"] != "success":
