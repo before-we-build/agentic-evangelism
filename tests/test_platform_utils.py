@@ -115,6 +115,8 @@ class PlatformUtilsTests(unittest.TestCase):
             res = platform_utils.detect_audio_attribution(meta, filename=fname, lang='ru')
             self.assertEqual(res['generator'], gen_id, f"Failed for {gen_id}")
             self.assertEqual(res['attribution_text'], expected_text)
+            self.assertEqual(res['provenance'], 'ai')
+            self.assertTrue(res['is_ai'])
             self.assertTrue(res['requires_ai_toggle'])
             self.assertTrue(res['requires_attribution'])
 
@@ -125,8 +127,40 @@ class PlatformUtilsTests(unittest.TestCase):
         )
         self.assertIsNone(res['generator'])
         self.assertFalse(res['is_ai'])
+        self.assertEqual(res['provenance'], 'unknown')
         self.assertIsNone(res['attribution_text'])
         self.assertFalse(res['requires_attribution'])
+
+        # Explicit human provenance
+        res_human = platform_utils.detect_audio_attribution(
+            filename='live_recording.wav',
+            user_provenance='human'
+        )
+        self.assertEqual(res_human['provenance'], 'human')
+        self.assertFalse(res_human['is_ai'])
+
+    def test_is_valid_image_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            p = Path(tmpdir)
+            # Empty file
+            f_empty = p / "empty.png"
+            f_empty.write_bytes(b"")
+            self.assertFalse(platform_utils.is_valid_image_file(f_empty))
+
+            # HTML mock/error
+            f_html = p / "error.png"
+            f_html.write_text("<!DOCTYPE html><html><body>Error 500</body></html>", encoding="utf-8")
+            self.assertFalse(platform_utils.is_valid_image_file(f_html))
+
+            # Valid PNG header
+            f_png = p / "valid.png"
+            f_png.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"0" * 20)
+            self.assertTrue(platform_utils.is_valid_image_file(f_png))
+
+            # Valid JPEG header
+            f_jpg = p / "valid.jpg"
+            f_jpg.write_bytes(b"\xff\xd8\xff\xe0" + b"0" * 20)
+            self.assertTrue(platform_utils.is_valid_image_file(f_jpg))
 
     def test_find_system_font(self):
         font = platform_utils.find_system_font()

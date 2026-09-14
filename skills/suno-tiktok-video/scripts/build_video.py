@@ -10,9 +10,9 @@ import tempfile
 import time
 
 try:
-    from platform_utils import detect_audio_attribution, find_system_font
+    from platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file
 except ImportError:
-    from .platform_utils import detect_audio_attribution, find_system_font
+    from .platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file
 
 
 def probe(path, ffprobe_bin='ffprobe'):
@@ -119,13 +119,32 @@ def main():
     if not math.isfinite(duration) or duration <= 0:
         parser.error('Invalid audio duration')
     if args.storyboard:
-        scenes = json.loads(args.storyboard.read_text(encoding='utf-8'))['scenes']
+        sb_data = json.loads(args.storyboard.read_text(encoding='utf-8'))
+        scenes = sb_data.get('scenes', [])
+        assets = sb_data.get('assets', [])
+        assets_by_id = {}
+        if isinstance(assets, list):
+            for a in assets:
+                if isinstance(a, dict) and 'id' in a:
+                    assets_by_id[str(a['id'])] = a
+
         if not isinstance(scenes, list) or not scenes:
             parser.error('Storyboard needs a nonempty scenes list')
         images = []
         lengths = []
-        for scene in scenes:
-            path = Path(scene['image']).expanduser()
+        for idx, scene in enumerate(scenes):
+            if not isinstance(scene, dict):
+                parser.error(f'Scene at index {idx} must be an object')
+            img_ref = scene.get('image')
+            if not img_ref and 'asset_id' in scene:
+                asset_id = str(scene['asset_id'])
+                if asset_id not in assets_by_id:
+                    parser.error(f"Scene {idx} references unknown asset_id '{asset_id}'")
+                img_ref = assets_by_id[asset_id].get('image')
+            if not img_ref:
+                parser.error(f"Scene {idx} must specify an 'image' path or a valid 'asset_id'")
+
+            path = Path(img_ref).expanduser()
             if not path.is_absolute():
                 path = args.storyboard.resolve().parent / path
             images.append(path)
@@ -141,6 +160,8 @@ def main():
     for path in images:
         if not path.is_file() or path.stat().st_size == 0:
             parser.error(f'Missing or empty image: {path}')
+        if not is_valid_image_file(path):
+            parser.error(f'Corrupt or invalid image format (must be valid PNG, JPEG, or WebP): {path}')
     try:
         clip_frames, offsets, t_frames = calculate_timeline(
             lengths, duration, args.transition, args.transition_duration, fps=25)

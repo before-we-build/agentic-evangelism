@@ -293,12 +293,41 @@ GENERATOR_RULES = [
 ]
 
 
+def is_valid_image_file(path: str | Path) -> bool:
+    """Check whether file exists, is non-empty, and has valid image magic bytes (PNG, JPEG, WebP, Netpbm, GIF, BMP)."""
+    p = Path(path)
+    if not p.is_file():
+        return False
+    try:
+        size = p.stat().st_size
+        if size < 8:
+            return False
+        with open(p, 'rb') as f:
+            header = f.read(16)
+        if header.startswith(b'\x89PNG\r\n\x1a\n'):
+            return True
+        if header.startswith(b'\xff\xd8\xff'):
+            return True
+        if header.startswith(b'RIFF') and header[8:12] == b'WEBP':
+            return True
+        if len(header) >= 3 and header[0:1] == b'P' and header[1:2] in b'123456' and header[2:3] in (b'\n', b'\r', b' ', b'\t'):
+            return True
+        if header.startswith(b'GIF87a') or header.startswith(b'GIF89a'):
+            return True
+        if header.startswith(b'BM'):
+            return True
+        return False
+    except (OSError, PermissionError):
+        return False
+
+
 def detect_audio_attribution(
     metadata: dict | None = None,
     filename: str | Path | None = None,
-    lang: str = 'ru'
+    lang: str = 'ru',
+    user_provenance: str | None = None,
 ) -> dict:
-    """Detect AI music generator and prepare attribution & TikTok disclosure data."""
+    """Detect AI music generator and prepare attribution, disclosure & provenance data."""
     lang_code = lang.lower() if lang else 'ru'
     if lang_code not in ('ru', 'uk', 'en'):
         lang_code = 'ru'
@@ -327,14 +356,16 @@ def detect_audio_attribution(
             break
 
     if not detected:
+        prov = user_provenance if user_provenance in ('human', 'ai', 'mixed') else 'unknown'
         return {
             'generator': None,
             'name': None,
-            'is_ai': False,
+            'is_ai': (prov == 'ai'),
+            'provenance': prov,
             'attribution_text': None,
             'caption_text': None,
             'hashtags': '',
-            'requires_ai_toggle': False,
+            'requires_ai_toggle': (prov == 'ai'),
             'requires_attribution': False,
         }
 
@@ -353,6 +384,7 @@ def detect_audio_attribution(
         'generator': detected['id'],
         'name': name,
         'is_ai': True,
+        'provenance': 'ai',
         'attribution_text': attr_text,
         'caption_text': caption,
         'hashtags': hashtags,

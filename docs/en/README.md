@@ -12,6 +12,8 @@ This project helps you make videos for Christian songs to share on YouTube, Shor
 
 📱 **[Set up your phone once](phone-setup.md)** — if you are using an Android phone.
 
+🎼 **[Create a song](music-generation.md)** — from a Scripture verse and teachers of the faith to music in Suno/Udio.
+
 🎵 **[Make a video](first-video.md)** — if your environment is already set up. This is a useful page to bookmark.
 
 🛟 **[Something is not working](help.md)** — quick tips and a message you can use to ask for help.

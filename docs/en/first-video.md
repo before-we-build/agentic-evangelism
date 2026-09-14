@@ -8,7 +8,7 @@ You set up your phone [once](phone-setup.md). After that, repeat only the steps 
 
 ## 1. Download the song
 
-Save audio from Suno or another source you have permission to use. Wait for the download to finish.
+Save audio from Suno or another source you have permission to use. Wait for the download to finish. If you are creating a song from scratch — from a Scripture verse and commentary to music — see the [music generation guide](music-generation.md).
 
 Open **Files → Downloads**. Find the song and note its filename. Do not delete the original. If you have several versions, choose the one you want.
 

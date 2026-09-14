@@ -101,6 +101,32 @@ def generate_single_mock(output_path: Path) -> bool:
     return True
 
 
+def is_valid_image_file(path: Path) -> bool:
+    """Check whether file exists, is non-empty, and has valid image magic bytes (PNG, JPEG, WebP, Netpbm, GIF, BMP)."""
+    if not path.is_file():
+        return False
+    try:
+        if path.stat().st_size < 8:
+            return False
+        with open(path, "rb") as f:
+            header = f.read(16)
+        if header.startswith(b"\x89PNG\r\n\x1a\n"):
+            return True
+        if header.startswith(b"\xff\xd8\xff"):
+            return True
+        if header.startswith(b"RIFF") and header[8:12] == b"WEBP":
+            return True
+        if len(header) >= 3 and header[0:1] == b"P" and header[1:2] in b"123456" and header[2:3] in (b"\n", b"\r", b" ", b"\t"):
+            return True
+        if header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
+            return True
+        if header.startswith(b"BM"):
+            return True
+        return False
+    except (OSError, PermissionError):
+        return False
+
+
 def call_free_pollinations(prompt: str, output_path: Path, aspect_ratio: str = "9:16") -> bool:
     """
     100% Free terminal image generation via Pollinations.ai (FLUX.1 model).
@@ -124,10 +150,10 @@ def call_free_pollinations(prompt: str, output_path: Path, aspect_ratio: str = "
         with urllib.request.urlopen(req, timeout=45) as response:
             if response.status == 200:
                 data = response.read()
-                if len(data) > 1000:
+                if len(data) > 100:
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     output_path.write_bytes(data)
-                    return True
+                    return is_valid_image_file(output_path)
         return False
     except Exception:
         return False
@@ -243,12 +269,21 @@ class PipelineRunner:
         preferred_provider: str,
         output_dir: Path,
     ) -> Dict[str, Any]:
-        scene_id = str(scene.get("id", "scene"))
+        scene_id = str(scene.get("id", "scene")).strip() or "scene"
         prompt = scene.get("prompt", "")
-        compiled_prompt = compile_prompt(prompt, self.style_anchor)
-
         rel_or_abs = Path(scene.get("image", f"{scene_id}.png"))
         output_path = rel_or_abs if rel_or_abs.is_absolute() else output_dir / rel_or_abs
+
+        if not prompt or not str(prompt).strip():
+            return {
+                "id": scene_id,
+                "provider": None,
+                "status": "failed",
+                "output": str(output_path),
+                "error": f"Empty or missing prompt for '{scene_id}'. A non-empty prompt is required.",
+            }
+
+        compiled_prompt = compile_prompt(str(prompt), self.style_anchor)
 
         # Build fallback order starting from preferred provider, then remaining active, then free
         order = [preferred_provider]
@@ -274,7 +309,7 @@ class PipelineRunner:
             else:
                 success = False
 
-            if success:
+            if success and is_valid_image_file(output_path):
                 return {
                     "id": scene_id,
                     "provider": provider,
@@ -307,18 +342,58 @@ class PipelineRunner:
     ) -> Dict[str, Any]:
         output_dir.mkdir(parents=True, exist_ok=True)
         data = json.loads(storyboard_path.read_text(encoding="utf-8"))
-        scenes = data.get("scenes", [])
-        if not scenes:
-            raise ValueError("Storyboard contains no scenes")
 
-        assignments = partition_scenes(scenes, self.active_providers)
+        # Check canonical Schema v2 assets first
+        if "assets" in data and isinstance(data["assets"], list) and len(data["assets"]) > 0:
+            raw_items = data["assets"]
+            is_canonical_assets = True
+        elif "scenes" in data and isinstance(data["scenes"], list) and len(data["scenes"]) > 0:
+            raw_items = data["scenes"]
+            is_canonical_assets = False
+        else:
+            raise ValueError("Storyboard contains neither 'assets' nor 'scenes'")
+
+        seen_ids = set()
+        seen_paths = set()
+        items_to_generate: List[Dict[str, Any]] = []
+
+        for idx, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                raise ValueError(f"Invalid item at index {idx} in storyboard: must be an object")
+
+            raw_id = item.get("id")
+            if raw_id is not None and str(raw_id).strip():
+                item_id = str(raw_id).strip()
+            else:
+                item_id = f"item_{idx}" if is_canonical_assets else f"scene_{idx}"
+
+            if item_id in seen_ids:
+                raise ValueError(f"Duplicate item id '{item_id}' found in storyboard")
+            seen_ids.add(item_id)
+
+            prompt = item.get("prompt", "")
+            if not prompt or not str(prompt).strip():
+                raise ValueError(f"Item '{item_id}' has an empty or missing prompt")
+
+            rel_or_abs = Path(item.get("image", f"{item_id}.png"))
+            output_path = rel_or_abs if rel_or_abs.is_absolute() else output_dir / rel_or_abs
+            resolved_str = str(output_path.resolve())
+            if resolved_str in seen_paths:
+                raise ValueError(f"Conflicting output path '{output_path}' between storyboard items")
+            seen_paths.add(resolved_str)
+
+            item_copy = dict(item)
+            item_copy["id"] = item_id
+            items_to_generate.append(item_copy)
+
+        assignments = partition_scenes(items_to_generate, self.active_providers)
         results: List[Dict[str, Any]] = []
 
         total_workers = max(1, self.agy_workers + self.codex_workers)
         with concurrent.futures.ThreadPoolExecutor(max_workers=total_workers) as executor:
             future_to_scene = {
-                executor.submit(self.generate_scene, sc, prov, output_dir): sc
-                for sc, prov in assignments
+                executor.submit(self.generate_scene, item, prov, output_dir): item
+                for item, prov in assignments
             }
 
             for future in concurrent.futures.as_completed(future_to_scene):
@@ -336,7 +411,8 @@ class PipelineRunner:
 
         success_count = sum(1 for r in results if r["status"] == "success")
         return {
-            "total_scenes": len(scenes),
+            "total_assets": len(items_to_generate),
+            "total_scenes": len(data.get("scenes", items_to_generate)),
             "completed": success_count,
             "results": results,
             "active_providers": self.active_providers,
@@ -375,8 +451,9 @@ def main():
     if args.storyboard:
         out_dir = args.output_dir or args.storyboard.resolve().parent / "images"
         summary = runner.run_storyboard(args.storyboard, out_dir)
-        if summary["completed"] != summary["total_scenes"]:
-            print(f"Error: {summary['total_scenes'] - summary['completed']} scenes failed", file=sys.stderr)
+        total_items = summary.get("total_assets", summary.get("total_scenes", 0))
+        if summary["completed"] != total_items:
+            print(f"Error: {total_items - summary['completed']} items failed", file=sys.stderr)
             sys.exit(1)
     else:
         if not args.output:
