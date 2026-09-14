@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 import importlib.util
+import os
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import types
+from unittest import mock
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,16 +19,32 @@ spec.loader.exec_module(align_mod)
 
 
 class AlignLyricsTests(unittest.TestCase):
-    def test_encode_multipart_format(self):
-        fields = {"model": "whisper-large-v3", "response_format": "verbose_json"}
-        files = {"file": ("test.mp3", b"ID3\x03000fakeaudio", "audio/mpeg")}
-        body, ct_header = align_mod.encode_multipart(fields, files)
+    def test_official_sdk_requests_word_and_segment_timestamps(self):
+        captured = {}
 
-        self.assertTrue(ct_header.startswith("multipart/form-data; boundary="))
-        self.assertIn(b'name="model"', body)
-        self.assertIn(b"whisper-large-v3", body)
-        self.assertIn(b'filename="test.mp3"', body)
-        self.assertIn(b"Content-Type: audio/mpeg", body)
+        class FakeTranscriptions:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return types.SimpleNamespace(model_dump=lambda: {
+                    "segments": [{"start": 1.0, "end": 2.0, "text": "Господи"}],
+                    "words": [{"start": 1.0, "end": 2.0, "word": "Господи"}],
+                })
+
+        class FakeGroq:
+            def __init__(self, **kwargs):
+                captured["client"] = kwargs
+                self.audio = types.SimpleNamespace(transcriptions=FakeTranscriptions())
+
+        with mock.patch.dict(sys.modules, {"groq": types.SimpleNamespace(Groq=FakeGroq)}):
+            result = align_mod.call_groq_whisper(
+                Path("/tmp/example.mp3"), "fake-secret", prompt="Господи", language="uk"
+            )
+
+        self.assertEqual(captured["timestamp_granularities"], ["word", "segment"])
+        self.assertEqual(captured["response_format"], "verbose_json")
+        self.assertEqual(captured["language"], "uk")
+        self.assertEqual(captured["client"]["max_retries"], 0)
+        self.assertEqual(result["words"][0]["word"], "Господи")
 
     def test_align_segments_covers_full_duration(self):
         scenes = [
@@ -64,18 +83,31 @@ class AlignLyricsTests(unittest.TestCase):
         self.assertEqual(aligned[0]["end_time"], 25.0)
         self.assertEqual(aligned[0]["duration_seconds"], 25.0)
 
-    def test_extract_lyrics_text_from_storyboard(self):
-        sb_data = {
-            "central_message": "Hope in Christ",
-            "subideas": [
-                {"summary": "Walking through valley", "evidence": "lines 1-2"},
-                {"summary": "Morning sunrise", "evidence": "lines 3-4"},
-            ]
-        }
-        text = align_mod.extract_lyrics_text_from_storyboard(sb_data)
-        self.assertIn("Hope in Christ", text)
-        self.assertIn("Walking through valley", text)
-        self.assertIn("Morning sunrise", text)
+    def test_live_flow_preserves_storyboard_and_saves_raw_word_times(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            work = Path(tmpdir)
+            audio = work / "song.mp3"
+            audio.write_bytes(b"ID3" + b"0" * 200)
+            storyboard = work / "storyboard.json"
+            original = {"scenes": [{"image": "1.png", "duration_seconds": 5.0}]}
+            storyboard.write_text(json.dumps(original), encoding="utf-8")
+            response = {
+                "segments": [{"start": 0.5, "end": 2.0, "text": "Господи"}],
+                "words": [{"start": 0.5, "end": 2.0, "word": "Господи"}],
+            }
+            argv = ["align_lyrics.py", "--audio", str(audio), "--storyboard", str(storyboard)]
+            with mock.patch.object(sys, "argv", argv), \
+                 mock.patch.dict(os.environ, {"GROQ_API_KEY": "fake-secret"}), \
+                 mock.patch.object(align_mod, "call_groq_whisper", return_value=response), \
+                 mock.patch.object(align_mod, "probe_audio_duration", return_value=5.0):
+                align_mod.main()
+            aligned = json.loads((work / "storyboard-aligned.json").read_text(encoding="utf-8"))
+            transcript = json.loads((work / "storyboard-transcript.json").read_text(encoding="utf-8"))
+            self.assertEqual(json.loads(storyboard.read_text(encoding="utf-8")), original)
+            self.assertEqual(aligned["timing_basis"], "groq_segment_guided_estimate")
+            self.assertTrue(aligned["asr_word_timestamps_unreviewed"])
+            self.assertEqual(transcript["words"], response["words"])
+            self.assertEqual((work / "storyboard-transcript.json").stat().st_mode & 0o777, 0o600)
 
     def test_cli_dry_run_updates_storyboard(self):
         with tempfile.TemporaryDirectory() as tmpdir:

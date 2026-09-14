@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Zero-cost, universal lyrics-to-audio alignment using free Groq Whisper Large-v3.
-Requires no credit cards, zero third-party dependencies, and runs smoothly on Android (Termux).
-"""
+"""Get Groq Whisper timestamps and estimate storyboard scene boundaries."""
 
 from __future__ import annotations
 
@@ -11,15 +8,10 @@ import json
 import math
 import os
 from pathlib import Path
-import re
-import shutil
 import subprocess
 import sys
-import urllib.error
-import urllib.request
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-GROQ_ENDPOINT = "https://api.groq.com/openai/v1/audio/transcriptions"
 DEFAULT_MODEL = "whisper-large-v3"
 
 
@@ -42,30 +34,6 @@ def probe_audio_duration(audio_path: Path, ffprobe_bin: str = "ffprobe") -> floa
     return 0.0
 
 
-def encode_multipart(fields: Dict[str, Any], files: Dict[str, Tuple[str, bytes, str]]) -> Tuple[bytes, str]:
-    """Encode multipart/form-data payload using standard library only."""
-    boundary = f"----WebKitFormBoundary{os.urandom(16).hex()}"
-    body = bytearray()
-
-    for name, value in fields.items():
-        if value is not None:
-            body.extend(f"--{boundary}\r\n".encode("utf-8"))
-            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
-            body.extend(str(value).encode("utf-8"))
-            body.extend(b"\r\n")
-
-    for name, (filename, content, content_type) in files.items():
-        body.extend(f"--{boundary}\r\n".encode("utf-8"))
-        body.extend(f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8"))
-        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
-        body.extend(content)
-        body.extend(b"\r\n")
-
-    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
-    content_type_header = f"multipart/form-data; boundary={boundary}"
-    return bytes(body), content_type_header
-
-
 def call_groq_whisper(
     audio_path: Path,
     api_key: str,
@@ -74,76 +42,29 @@ def call_groq_whisper(
     model: str = DEFAULT_MODEL,
     timeout: int = 60,
 ) -> Dict[str, Any]:
-    """Transcribe audio via Groq Whisper API with verbose_json output format."""
-    audio_bytes = audio_path.read_bytes()
-    filename = audio_path.name
+    """Transcribe through the official Groq SDK with word and segment timestamps."""
+    try:
+        from groq import Groq
+    except ImportError as error:
+        raise RuntimeError("Official Groq SDK is missing; install 'groq' in this Python environment") from error
 
-    ext = audio_path.suffix.lower()
-    content_type_map = {
-        ".mp3": "audio/mpeg",
-        ".wav": "audio/wav",
-        ".m4a": "audio/m4a",
-        ".flac": "audio/flac",
-        ".ogg": "audio/ogg",
-    }
-    content_type = content_type_map.get(ext, "application/octet-stream")
-
-    fields: Dict[str, Any] = {
+    request: Dict[str, Any] = {
+        "file": audio_path,
         "model": model,
         "response_format": "verbose_json",
+        "timestamp_granularities": ["word", "segment"],
     }
     if prompt:
-        # Prompt guides Whisper and prevents hallucinations on lyrics
-        fields["prompt"] = prompt[:400]
+        request["prompt"] = prompt
     if language:
-        fields["language"] = language
-
-    files = {
-        "file": (filename, audio_bytes, content_type)
-    }
-
-    body, ct_header = encode_multipart(fields, files)
-
-    req = urllib.request.Request(
-        GROQ_ENDPOINT,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {api_key.strip()}",
-            "Content-Type": ct_header,
-            "User-Agent": "agentic-evangelism/align_lyrics",
-        },
-        method="POST",
-    )
+        request["language"] = language
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-            return json.loads(data.decode("utf-8"))
-    except urllib.error.HTTPError as err:
-        err_msg = err.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"Groq API error (HTTP {err.code}): {err_msg}") from err
-    except Exception as err:
-        raise RuntimeError(f"Network error contacting Groq API: {err}") from err
-
-
-def extract_lyrics_text_from_storyboard(sb_data: Dict[str, Any]) -> str:
-    """Extract full lyrics or subidea summaries to use as Whisper prompt."""
-    parts: List[str] = []
-    # If explicit lyrics or central_message
-    if "central_message" in sb_data:
-        parts.append(str(sb_data["central_message"]))
-
-    # From subideas
-    subideas = sb_data.get("subideas", [])
-    if isinstance(subideas, list):
-        for s in subideas:
-            if isinstance(s, dict):
-                if "summary" in s:
-                    parts.append(str(s["summary"]))
-                if "evidence" in s:
-                    parts.append(str(s["evidence"]))
-
-    return " ".join(parts).strip()
+        response = Groq(api_key=api_key, timeout=timeout, max_retries=0).audio.transcriptions.create(**request)
+    except Exception as error:
+        detail = str(error).replace(api_key, "[REDACTED]")
+        raise RuntimeError(f"Groq transcription failed: {detail}") from error
+    return response.model_dump()
 
 
 def align_segments_to_scenes(
@@ -228,12 +149,12 @@ def align_segments_to_scenes(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Zero-cost neural lyrics-to-audio alignment using free Groq Whisper Large-v3."
+        description="Request Groq word/segment timestamps and estimate scene boundaries; no karaoke is rendered."
     )
     parser.add_argument("--audio", type=Path, required=True, help="Path to input audio file")
     parser.add_argument("--storyboard", type=Path, required=True, help="Path to storyboard JSON file")
-    parser.add_argument("--output", type=Path, help="Path to write aligned storyboard (defaults to updating in-place)")
-    parser.add_argument("--api-key", type=str, help="Groq API Key (defaults to GROQ_API_KEY environment variable)")
+    parser.add_argument("--output", type=Path, help="Path to write aligned storyboard (default: sibling *-aligned.json)")
+    parser.add_argument("--transcript-output", type=Path, help="Path to save Groq timestamps (default: sibling *-transcript.json)")
     parser.add_argument("--prompt", type=str, help="Optional text prompt / lyrics override for Whisper")
     parser.add_argument("--language", type=str, help="Language code (e.g. 'uk', 'ru', 'en')")
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL, help=f"Groq model (default: {DEFAULT_MODEL})")
@@ -263,19 +184,24 @@ def main() -> None:
     if total_duration <= 0:
         sys.exit("Error: unable to determine audio duration")
 
-    api_key = args.api_key or os.environ.get("GROQ_API_KEY", "")
+    api_key = os.environ.get("GROQ_API_KEY", "")
 
     if not api_key and not args.dry_run:
         print("[align_lyrics] Notice: GROQ_API_KEY environment variable is not set.", file=sys.stderr)
-        print("To enable 100% free neural lyric alignment (Whisper Large-v3, 8 hours/day free, zero credit cards):", file=sys.stderr)
-        print("  1. Create a free API key in 30 seconds at: https://console.groq.com/keys", file=sys.stderr)
-        print("  2. Run: export GROQ_API_KEY='gsk_...'", file=sys.stderr)
-        print("Skipping neural alignment; existing storyboard timings are preserved.", file=sys.stderr)
+        print("Set it securely in this process environment; never use CLI arguments or chat.", file=sys.stderr)
+        print("No audio was sent; existing storyboard timings are unchanged.", file=sys.stderr)
         if args.strict:
             sys.exit(2)
         sys.exit(0)
 
-    prompt = args.prompt or extract_lyrics_text_from_storyboard(sb_data)
+    prompt = args.prompt
+
+    out_path = (args.output or storyboard_path.with_name(f"{storyboard_path.stem}-aligned.json")).expanduser().resolve()
+    transcript_path = (args.transcript_output or storyboard_path.with_name(f"{storyboard_path.stem}-transcript.json")).expanduser().resolve()
+    if out_path == storyboard_path or out_path.exists():
+        parser.error("Aligned storyboard output must be a new file; preserve the original")
+    if not args.dry_run and (transcript_path.exists() or transcript_path in (storyboard_path, out_path)):
+        parser.error("Transcript output must be a separate new file")
 
     if args.dry_run:
         print("[align_lyrics] Running in dry-run mode (simulating Whisper response)")
@@ -304,19 +230,27 @@ def main() -> None:
     aligned_scenes = align_segments_to_scenes(scenes, segments, total_duration)
 
     sb_data["scenes"] = aligned_scenes
-    sb_data["timing_basis"] = f"groq_{args.model}_aligned" if not args.dry_run else "simulated_aligned"
+    sb_data["timing_basis"] = "groq_segment_guided_estimate" if not args.dry_run else "simulated_aligned"
 
-    out_path = (args.output or storyboard_path).expanduser().resolve()
+    if not args.dry_run:
+        transcript_path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(transcript_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(resp, output, indent=2, ensure_ascii=False)
+        sb_data["asr_transcript"] = str(transcript_path)
+        sb_data["asr_word_timestamps_unreviewed"] = bool(resp.get("words"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(sb_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(json.dumps({
-        "status": "aligned",
+        "status": "scene_estimate_updated",
         "audio": str(audio_path),
         "storyboard": str(out_path),
         "total_duration": total_duration,
         "scenes_aligned": len(aligned_scenes),
         "timing_basis": sb_data["timing_basis"],
+        "transcript": str(transcript_path) if not args.dry_run else None,
+        "word_timestamps_unreviewed": bool(resp.get("words")) if not args.dry_run else False,
     }, ensure_ascii=False))
 
 
