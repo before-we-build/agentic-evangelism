@@ -28,7 +28,7 @@ class PlatformUtilsTests(unittest.TestCase):
             self.assertEqual(platform_utils.detect_platform(), 'windows')
 
     def test_detect_macos_mock(self):
-        with patch.dict(os.environ, {}, clear=True), patch('sys.platform', 'darwin'):
+        with patch.dict(os.environ, {}, clear=True), patch('sys.platform', 'darwin'), patch.object(Path, 'is_dir', return_value=False):
             self.assertEqual(platform_utils.detect_platform(), 'macos')
 
     def test_detect_linux_mock(self):
