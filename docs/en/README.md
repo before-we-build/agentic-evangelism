@@ -8,9 +8,11 @@ This project helps you make videos for Christian songs to share on YouTube, Shor
 
 ## Where to start
 
-👉 **[Set up your phone once](phone-setup.md)** — if you do not have Codex yet.
+👉 **[Set up on your device](setup.md)** — choose your phone (Android) or computer (Windows, Mac, Linux).
 
-🎵 **[Make a video](first-video.md)** — if your phone is already set up. This is a useful page to bookmark.
+📱 **[Set up your phone once](phone-setup.md)** — if you are using an Android phone.
+
+🎵 **[Make a video](first-video.md)** — if your environment is already set up. This is a useful page to bookmark.
 
 🛟 **[Something is not working](help.md)** — quick tips and a message you can use to ask for help.
 

@@ -30,6 +30,9 @@ def check(root=ROOT):
     suno_skill = root / 'skills' / 'suno-tiktok-video'
     dual_skill = root / 'skills' / 'dual-image-pipeline'
     for base in (suno_skill / 'SKILL.md', suno_skill / 'references' / 'android.md',
+                 suno_skill / 'references' / 'windows.md',
+                 suno_skill / 'references' / 'macos.md',
+                 suno_skill / 'references' / 'linux.md',
                  suno_skill / 'references' / 'storyboard.md',
                  dual_skill / 'SKILL.md', dual_skill / 'references' / 'providers.md'):
         for suffix in ('', '.ru', '.uk'):

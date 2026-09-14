@@ -2,7 +2,7 @@
 
 [Українська](../uk/phone-setup.md) · [Русский](../ru/phone-setup.md) · English
 
-You need an Android phone and internet. No computer is needed. If Codex already works and can see the `suno-tiktok-video` skill, go to [making a video](first-video.md).
+You need an Android phone and internet. No computer is needed. If you are using a computer (Windows, Mac, or Linux), see the general [setup guide](setup.md). If Codex already works and can see the `suno-tiktok-video` skill, go to [making a video](first-video.md).
 
 **How to follow the steps:** copy the text from a grey box, press and hold the screen in the right app → **Paste** → **Enter**. Wait for it to finish before moving on.
 

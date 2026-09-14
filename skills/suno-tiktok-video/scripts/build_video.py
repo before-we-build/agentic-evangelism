@@ -10,10 +10,10 @@ import tempfile
 import time
 
 
-def probe(path):
+def probe(path, ffprobe_bin='ffprobe'):
     return json.loads(subprocess.check_output([
-        'ffprobe', '-v', 'error', '-show_format', '-show_streams',
-        '-of', 'json', str(path)], text=True))
+        str(ffprobe_bin), '-v', 'error', '-show_format', '-show_streams',
+        '-of', 'json', str(path)], text=True, encoding='utf-8'))
 
 
 def run(args):
@@ -72,13 +72,23 @@ def main():
     parser.add_argument('--transition-duration', type=float, default=0.75,
                         help='Transition duration in seconds (default: 0.75)')
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--ffmpeg', type=Path, help='Explicit path to ffmpeg binary')
+    parser.add_argument('--ffprobe', type=Path, help='Explicit path to ffprobe binary')
+    parser.add_argument('--work-dir', type=Path, help='Custom working directory for temp clips')
     args = parser.parse_args()
+
     if args.transition_duration <= 0 or not math.isfinite(args.transition_duration):
         parser.error('Transition duration must be a positive finite number')
-    for tool in ('ffmpeg', 'ffprobe'):
-        if not shutil.which(tool):
-            parser.error(f'{tool} is not installed')
-    audio, output = (p.expanduser().absolute() for p in (args.audio, args.output))
+
+    ffmpeg_bin = str(args.ffmpeg.expanduser().resolve()) if args.ffmpeg else 'ffmpeg'
+    ffprobe_bin = str(args.ffprobe.expanduser().resolve()) if args.ffprobe else 'ffprobe'
+
+    for name, tool in (('ffmpeg', ffmpeg_bin), ('ffprobe', ffprobe_bin)):
+        if not shutil.which(tool) and not Path(tool).is_file():
+            parser.error(f'{name} is not installed or not executable: {tool}')
+
+    audio = args.audio.expanduser().resolve()
+    output = args.output.expanduser().resolve()
     if output.exists() or output.is_symlink():
         parser.error('Output already exists; choose a fresh filename')
     if output.suffix.lower() != '.mp4' or not output.parent.is_dir():
@@ -90,7 +100,7 @@ def main():
     time.sleep(2)
     if before != (audio.stat().st_size, audio.stat().st_mtime_ns):
         parser.error('Audio is still changing; wait for download completion')
-    metadata = probe(audio)
+    metadata = probe(audio, ffprobe_bin=ffprobe_bin)
     streams = [s for s in metadata['streams'] if s['codec_type'] == 'audio']
     if not streams:
         parser.error('Input contains no audio stream')
@@ -98,7 +108,7 @@ def main():
     if not math.isfinite(duration) or duration <= 0:
         parser.error('Invalid audio duration')
     if args.storyboard:
-        scenes = json.loads(args.storyboard.read_text())['scenes']
+        scenes = json.loads(args.storyboard.read_text(encoding='utf-8'))['scenes']
         if not isinstance(scenes, list) or not scenes:
             parser.error('Storyboard needs a nonempty scenes list')
         images = []
@@ -115,7 +125,7 @@ def main():
         if abs(sum(lengths) - duration) > 0.15:
             parser.error('Storyboard durations must cover the full audio within 0.15 seconds')
     else:
-        images = [args.image.expanduser().absolute()]
+        images = [args.image.expanduser().resolve()]
         lengths = [duration]
     for path in images:
         if not path.is_file() or path.stat().st_size == 0:
@@ -126,15 +136,16 @@ def main():
     except ValueError as err:
         parser.error(str(err))
     # Decode the selected audio before spending time on rendering.
-    run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-i', str(audio),
+    run([ffmpeg_bin, '-v', 'error', '-xerror', '-nostdin', '-i', str(audio),
          '-map', '0:a:0', '-f', 'null', '-'])
-    work = Path(tempfile.mkdtemp(prefix='suno-tiktok-'))
+    work = args.work_dir.expanduser().resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix='suno-tiktok-'))
+    work.mkdir(parents=True, exist_ok=True)
     stage = work / 'verified-video.mp4'
-    print(json.dumps({'work_dir': str(work), 'audio_duration': duration}), flush=True)
+    print(json.dumps({'work_dir': str(work), 'audio_duration': duration}, ensure_ascii=False), flush=True)
     for index, (image, count) in enumerate(zip(images, clip_frames)):
         clip = work / f'scene-{index:05d}.mp4'
-        print(json.dumps({'scene': index + 1, 'total': len(images)}), flush=True)
-        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+        print(json.dumps({'scene': index + 1, 'total': len(images)}, ensure_ascii=False), flush=True)
+        run([ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
              '-n', '-loop', '1', '-framerate', '25', '-i', str(image),
              '-map', '0:v:0', '-map_metadata', '-1',
              '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
@@ -155,7 +166,7 @@ def main():
             )
             last_label = out_label
         filter_complex = ';'.join(filter_steps)
-        cmd = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-n']
+        cmd = [ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-n']
         for i in range(len(images)):
             cmd.extend(['-i', str(work / f'scene-{i:05d}.mp4')])
         cmd.extend([
@@ -171,13 +182,13 @@ def main():
     else:
         # Only generated ASCII filenames enter the concat syntax, never user paths.
         playlist = work / 'scenes.txt'
-        playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(images))))
-        run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+        playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(images))), encoding='utf-8')
+        run([ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
              '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
              '-map', '0:v:0', '-map', '1:a:0', '-map_metadata', '-1',
              '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
              '-movflags', '+faststart', str(stage)])
-    result = probe(stage)
+    result = probe(stage, ffprobe_bin=ffprobe_bin)
     video = [s for s in result['streams'] if s['codec_type'] == 'video']
     sound = [s for s in result['streams'] if s['codec_type'] == 'audio']
     if len(video) != 1 or len(sound) != 1:
@@ -190,11 +201,11 @@ def main():
     for stream in (v, a):
         if abs(float(stream['duration']) - duration) > 0.15:
             raise RuntimeError('Output stream does not cover the full song')
-    run(['ffmpeg', '-v', 'error', '-xerror', '-nostdin', '-i', str(stage),
+    run([ffmpeg_bin, '-v', 'error', '-xerror', '-nostdin', '-i', str(stage),
          '-map', '0:v:0', '-map', '0:a:0', '-f', 'null', '-'])
     if before != (audio.stat().st_size, audio.stat().st_mtime_ns):
         raise RuntimeError('Source audio changed during rendering')
-    (work / 'verification.json').write_text(json.dumps(result, indent=2))
+    (work / 'verification.json').write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
     # Exclusive creation also protects against a destination created during render.
     with output.open('xb') as dst, stage.open('rb') as src:
         shutil.copyfileobj(src, dst)
@@ -205,6 +216,7 @@ def main():
                       'duration': float(result['format']['duration']),
                       'resolution': '1080x1920', 'decode_verified': True,
                       'transition': effective_transition,
+                      'delivery_status': 'ready_for_export',
                       'android_indexing': 'not checked by this script',
                       'report': str(work / 'verification.json')}, ensure_ascii=False))
 

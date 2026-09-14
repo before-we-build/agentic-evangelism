@@ -55,6 +55,26 @@ class TimelineTests(unittest.TestCase):
         self.assertIsNone(t)
 
 
+class CliArgsTests(unittest.TestCase):
+    def test_build_video_custom_binary_not_found(self):
+        proc = subprocess.run([
+            sys.executable, str(HELPERS / 'build_video.py'),
+            '--audio', 'dummy.mp3', '--image', 'dummy.png', '--output', 'dummy.mp4',
+            '--ffmpeg', '/non/existent/path/ffmpeg'
+        ], capture_output=True, text=True, encoding='utf-8')
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('not installed or not executable', proc.stderr)
+
+    def test_extract_lyrics_custom_binary_not_found(self):
+        proc = subprocess.run([
+            sys.executable, str(HELPERS / 'extract_lyrics.py'),
+            '--audio', 'dummy.mp3', '--output', 'dummy.json',
+            '--ffprobe', '/non/existent/path/ffprobe'
+        ], capture_output=True, text=True, encoding='utf-8')
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('not installed or not executable', proc.stderr)
+
+
 @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg / FFprobe')
 class MediaTests(unittest.TestCase):
     def setUp(self):

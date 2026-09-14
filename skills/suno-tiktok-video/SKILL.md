@@ -15,9 +15,14 @@ Deliver an actual MP4 for the entire chosen song. Default to a **sequence of sti
 
 Apply these self-contained selection rules. If the user explicitly supplies a local workflow, read it as an optional override consistent with their request; no private configuration file is required:
 
-- Default input: `~/storage/downloads` → `/storage/emulated/0/Download` in Termux on Android (inside PRoot, use the shared path if accessible). Else use the user's Downloads directory.
+- Default input is discovered via `platform_utils.py`:
+  - **Android:** `~/storage/downloads` → `/storage/emulated/0/Download` in Termux (inside PRoot, use the shared path if accessible).
+  - **Windows:** `%USERPROFILE%\Downloads` or resolved via Win32 Known Folder `FOLDERID_Downloads`.
+  - **macOS:** `~/Downloads`.
+  - **Linux:** `xdg-user-dir DOWNLOAD` or `~/Downloads`.
+  - Else use the user's Downloads directory or an explicit path.
 - An explicit song selection takes precedence over recency. For “latest”, sort by mtime; do not guess from names alone.
-- List audio paths, sizes and timezone-aware mtimes, excluding hidden, empty, temporary, or still-changing files. Recheck file size and mtime after a short interval.
+- List audio paths, sizes and timezone-aware mtimes, excluding hidden, empty, temporary, or still-changing files. Recheck file size and mtime after a short interval (`platform_utils.check_file_stability`).
 - Show the selected full path, filename, byte size, and mtime before any upload. When multiple candidates plausibly fit, show them and ask once; prepare unrelated image work while waiting.
 - Search other formats of the chosen song. Prefer WAV > FLAC > MP3 > M4A only for verified versions of the same recording. Similar titles and `(1)` do not establish identity.
 - Confirm audio with ffprobe. File names and mtimes do not prove Suno origin, authorship, or rights. Retain user-provided provenance; do not invent it.
@@ -49,10 +54,10 @@ After verifying the anchors, launch independent tool calls concurrently, one per
 
 ## Build and verify
 
-Check `ffmpeg` and `ffprobe` first. Reuse installed tools; installation follows host permissions. Run the bundled helper with absolute paths and a fresh output filename:
+Check tools first with `python3 scripts/doctor.py`. Reuse installed tools; installation follows host permissions. Run the bundled helper with appropriate paths and a fresh output filename:
 
 ```sh
-python3 scripts/build_video.py --audio '/absolute/song.mp3' --storyboard '/absolute/storyboard.json' --output '/storage/emulated/0/Download/TikTok_song_02.mp4'
+python3 scripts/build_video.py --audio '/absolute/song.mp3' --storyboard '/absolute/storyboard.json' --output '/absolute/output/TikTok_song_02.mp4'
 ```
 
 For an explicitly requested single-image video, replace `--storyboard` with `--image '/absolute/artwork.png'`. Never pass both.
@@ -61,14 +66,18 @@ The helper preserves complete images with padding if needed, rounds scene bounda
 
 Before accepting output, inspect representative frames including a scene change and confirm that the images follow the storyboard. Technical verification does not validate lyric timing. Do not crop/normalize audio, add fades or trim the song unless requested. Default transitions are smooth crossfades (`--transition fade`, 0.75 s); pass `--transition none` for simple cuts.
 
-Use a short ASCII basename for Android discovery. On failure, inspect and correct the cause; an incomplete destination is not ready. Preserve it and retry with a fresh filename. Never delete inputs or previous outputs. Current TikTok account/upload limits require current official verification if relevant; advertising duration recommendations do not limit full-song posts.
+Use a clean filename without problematic characters for the target platform. On failure, inspect and correct the cause; an incomplete destination is not ready. Preserve it and retry with a fresh filename. Never delete inputs or previous outputs. Current TikTok account/upload limits require current official verification if relevant; advertising duration recommendations do not limit full-song posts.
 
-## Android visibility
+## Platform delivery and media availability
 
-A valid file in shared storage may be absent from TikTok's picker until Android indexes it. On Android, do not stop at filesystem existence. If ADB is available, read [references/android.md](references/android.md), scan the final file, then query MediaStore. Report indexing as confirmed only when that query finds the file. Otherwise give the actual limitation and a manual Files-app route; do not promise it is visible.
+Read the platform reference for your operating system:
+- **Android:** [references/android.md](references/android.md) — MediaStore indexing via ADB, broadcast, or Files app.
+- **Windows:** [references/windows.md](references/windows.md) — Downloads folder location, path quoting, and manual upload.
+- **macOS:** [references/macos.md](references/macos.md) — Homebrew tools, QuickTime preview, and manual upload.
+- **Linux:** [references/linux.md](references/linux.md) — Distribution packages, XDG Downloads, and manual upload.
 
 ## Finish and permissions
 
-Report the actual saved path, filename, duration, size, number of images/scenes, and verification result. Link the storyboard (with prompts) and lyrics extraction output; describe the scene timing as approximate. On Android, tell the user to reopen TikTok's picker and look under Videos or Downloads. Confirm local preparation separately from any upload outcome.
+Report the actual saved path, filename, duration, size, number of images/scenes, and verification result. Link the storyboard (with prompts) and lyrics extraction output; describe the scene timing as approximate. Confirm local preparation separately from any upload outcome.
 
-Creating the selected local video/artwork and updating local media indexing are preparation steps within the request, subject to host permissions. Uploading to TikTok, publishing, distributing, takedowns, and deletion need their own applicable authorization. Never bypass disabled tools. Disclose AI use honestly when describing origin or filling a platform disclosure; do not invent copyright or authorship. Do not ask for tokens in chat.
+Creating the selected local video/artwork and updating local media indexing are preparation steps within the request, subject to host permissions. The skill never posts or publishes videos automatically. Uploading to TikTok, publishing, distributing, takedowns, and deletion need their own applicable authorization and are performed manually by the user. Never bypass disabled tools. Disclose AI use honestly when describing origin or filling a platform disclosure; do not invent copyright or authorship. Do not ask for tokens in chat.
