@@ -42,9 +42,26 @@ Do not install duplicate copies in different locations just to try everything. I
 
 ## The agent reports a sandbox or bwrap error
 
-The recorded phone sometimes reported `bwrap: Can't get type of source ...`. That error happened before the requested command ran. It is not proof that the song or FFmpeg is broken. There is no universal fix established by these sessions.
+On the recorded Android ARM64 phone, Ubuntu under Termux/PRoot and Codex CLI 0.154.0 repeatedly produced `bwrap: Can't get type of source /tmp/codex-bwrap-synthetic-mount-targets-0: No such file or directory`. The requested command had not started. The directory was visible to `ls`, but `bwrap` could not bind it by its virtual `/tmp` path; binding the same directory by its real PRoot rootfs path succeeded. This locates the failure at the PRoot path translation and `bwrap` boundary on that phone. It does not prove that every PRoot installation has the same problem.
 
-Let the assistant explain the failed command. Use a narrowly scoped approval if the host offers it and you understand the action. Alternatively, run the reviewed command yourself in the Ubuntu terminal and return its short result. Do not disable all sandboxing or approvals as a default setup step. Stop if a managed environment does not permit the action.
+**Where: at the Ubuntu shell inside Termux, after leaving Codex.** Test the same sandbox settings without changing your Codex configuration:
+
+```sh
+rootfs=$(readlink -f /proc/self/root)
+TMPDIR="$rootfs/tmp" codex sandbox -c sandbox_mode=workspace-write -c sandbox_workspace_write.exclude_slash_tmp=true -- /bin/true
+echo $?
+```
+
+**Expected:** the sandbox command prints nothing, and `echo $?` prints `0`. On the recorded phone this test and temporary-file creation succeeded. If it fails, save the short new error text; do not assume it is the same cause.
+
+To start a new Codex conversation with these settings, use this command in the same Ubuntu shell:
+
+```sh
+rootfs=$(readlink -f /proc/self/root)
+TMPDIR="$rootfs/tmp" codex -c sandbox_workspace_write.exclude_slash_tmp=true
+```
+
+**Expected:** Codex opens normally. Repeat this command for later sessions, or have a helper make a reviewed launcher in `~/.local/bin/codex` that supplies the same two settings and calls the real Codex binary. On the recorded phone such a launcher was installed and verified with `codex sandbox`; a full fresh-phone installation and every interactive workflow have not been tested. Check `command -v codex` before assuming that a launcher is being used. Do not make unrestricted access the default. If a managed environment forbids this setup, stop and ask its administrator.
 
 ## The render stopped or the output already exists
 

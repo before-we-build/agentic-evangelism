@@ -103,6 +103,8 @@ codex --version
 
 **You should see:** `codex-cli` and a version number. If there is an error, do not reinstall everything — [ask for help](help.md).
 
+If Codex later reports `bwrap: Can't get type of source /tmp/codex-bwrap-synthetic-mount-targets-...`, see the [tested PRoot workaround](troubleshooting.md#the-agent-reports-a-sandbox-or-bwrap-error). This is a sandbox startup error, not a reason to reinstall the video programs.
+
 ## 5. Sign in to your account
 
 **Where: in Termux with Ubuntu open.**

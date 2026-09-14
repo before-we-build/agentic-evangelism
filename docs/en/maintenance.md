@@ -22,17 +22,17 @@ The maintainer requested a review of local Codex session history on 12 September
 | 12 September: visual workflow | Six generated still pictures, eleven scenes and a complete 122.2-second 1080×1920 MP4 were produced on the phone. H.264 video, AAC audio and Android indexing were checked. Image changes were approximate; lyric alignment was not verified. |
 | Parallel generation | Independent built-in requests were launched together; no controlled speed comparison was run, and a service may queue requests internally. |
 | Image access | The recorded session had a built-in image tool. Fresh installations and other accounts may not have it. |
-| Sandbox | A local `bwrap` failure occurred. A general fix or unrestricted-mode requirement was not established. |
+| 14 September: sandbox | With Codex CLI 0.154.0 on the same phone, `bwrap` could not bind Codex's synthetic registry by its virtual `/tmp` path, although `ls` saw it; the real PRoot rootfs path worked. Setting `TMPDIR` to that real path and `sandbox_workspace_write.exclude_slash_tmp=true` passed `codex sandbox` and temporary-file checks. A clean-phone install and every interactive workflow remain untested. |
 
 The initial installation route is reconstructed from documentation and the observed working environment. We have not repeated a full clean-phone install. Updating this table requires actual test evidence; a successful syntax check is not a successful Android installation.
 
 ## Sources for setup
 
-Checked on 12 September 2026. Services and package versions can change; prefer the current official page when a step differs.
+Setup links checked on 12 September 2026; sandbox references checked on 14 September. Services and package versions can change; prefer the current official page when a step differs.
 
 - [Termux installation](https://github.com/termux/termux-app#installation) and [F-Droid download](https://f-droid.org/en/packages/com.termux/).
-- [PRoot-Distro](https://github.com/termux/proot-distro): installation, login and storage binding.
-- [Codex CLI](https://developers.openai.com/codex/cli/) and [CLI reference](https://developers.openai.com/codex/cli/reference/).
+- [PRoot-Distro](https://github.com/termux/proot-distro): installation, login and storage binding. [PRoot manual](https://github.com/proot-me/proot/blob/master/doc/proot/manual.rst): virtual rootfs and path translation.
+- [Codex CLI](https://developers.openai.com/codex/cli/) and [CLI reference](https://developers.openai.com/codex/cli/reference/). [Sandboxing](https://learn.chatgpt.com/docs/sandboxing) and [workspace-write configuration](https://learn.chatgpt.com/docs/config-file/config-advanced).
 - [Codex authentication](https://developers.openai.com/codex/auth/).
 - [Local Codex skills](https://developers.openai.com/codex/skills/).
 - [Android wireless ADB](https://developer.android.com/tools/adb#wireless-android11-command-line).
