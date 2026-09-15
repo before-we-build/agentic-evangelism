@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 from platform_utils import check_file_stability, get_downloads_dir
 from render_karaoke import probe, validate_lines, video_details
@@ -71,8 +72,11 @@ def finish(audio: Path, storyboard: Path, timing: Path, workspace: Path, slug: s
     workspace = workspace.expanduser().resolve()
     if not downloads.is_dir() or not workspace.is_dir():
         raise ValueError("Downloads and workspace must already exist")
-    if not (inside(workspace, downloads) or inside(workspace, Path("/tmp"))):
-        raise ValueError("Workspace must be inside Downloads or /tmp")
+    # PRoot can expose /tmp through a physical Android path; native Termux may
+    # use its own TMPDIR. Compare canonical roots just as we do for the workspace.
+    temporary_roots = {Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()}
+    if not (inside(workspace, downloads) or any(inside(workspace, root) for root in temporary_roots)):
+        raise ValueError("Workspace must be inside Downloads or the system temporary directory")
     if not inside(audio, downloads) or audio.suffix.lower() not in (".wav", ".flac", ".mp3", ".m4a"):
         raise ValueError("Audio must be a supported file in Downloads")
     if not audio.is_file() or not check_file_stability(audio):

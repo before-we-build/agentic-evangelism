@@ -38,7 +38,7 @@ Restart Codex and check `/skills`. The installer defaults to `~/.agents/skills/s
 python3 scripts/install_skill.py --destination ~/.codex/skills
 ```
 
-Do not install duplicate copies in different locations just to try everything. If the installer reports an existing copy, it has deliberately left that copy alone. Ask the assistant to compare the two folders and prepare a reviewed update, or use the repository's explicit `skills/suno-tiktok-video/SKILL.md` path for this task. Copying the skill cannot add an unavailable image tool.
+Do not install duplicate copies in different locations just to try everything. If the installer reports an existing copy, it has deliberately left that copy alone. Compare the folders, then use the [backup-preserving update commands](maintenance.md) with `--update` and the selected `--skill`, or use the repository's explicit `skills/suno-tiktok-video/SKILL.md` path for this task. Restart Codex after updating. Copying the skill cannot add an unavailable image tool.
 
 ## The agent reports a sandbox or bwrap error
 

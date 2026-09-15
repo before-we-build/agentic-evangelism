@@ -30,6 +30,12 @@ Identical brief phrasing does not guarantee an identical face in independent tex
 
 Macro-attributes (silhouette, hairstyle, garment cut, and a prominent color accent) are far more reliable than micro-details: they remain identifiable in wide establishing shots and rapid mobile feed viewing. Formulate the anchor block and insert it verbatim into the prompts of all scenes featuring that character. Omit this block for scenes without the character.
 
+### Optional supplied avatar
+
+To keep a chosen face instead of inventing one, set `characters[].avatar_image` to a user-supplied PNG, JPEG, or WebP file (absolute path or relative to `storyboard.json`). Keep the original in a private local workspace, outside the repository; do not commit personal likenesses. `assets[].character_ids` selects which avatars each image needs. An avatar is a reference for identity, not a finished scene: keep describing clothing, action, angle, setting, style, and framing in the prompt. Describe only visible traits that agree with the reference; do not invent a different face. This field is optional, and characters without it follow the existing text-anchor workflow.
+
+After writing the storyboard, run `python3 scripts/avatar_refs.py --storyboard '/absolute/workspace/storyboard.json'` from this skill directory. It validates avatar files and prints absolute `reference_images` paths per asset. On Android Termux, run it in the same shell used for `prepare_video.py`; expect JSON with each asset ID and its paths. For the built-in `image_gen` tool, inspect each supplied avatar, then pass that asset's `reference_images` as `referenced_image_paths` on its anchor test and every dependent scene call. Do not also set `num_last_images_to_include`. Keep the same avatar as the identity source across angles; an optional generated style anchor may accompany it only if the tool accepts multiple references. If the active image tool cannot accept image references, do not silently fall back to a newly invented face: use supplied finished scene images or explain the limitation and ask how to proceed. Image reference improves consistency but does not guarantee an exact likeness; inspect the test scene and final faces.
+
 ## Art direction (Visual Bible)
 
 A coherent visual style is defined by concrete physical choices rather than empty subjective buzzwords like "cinematic", "photorealistic", or "high quality". Specify:
@@ -224,3 +230,5 @@ Save one JSON file next to the art. Example for a hypothetical 20-second track (
 ```
 
 The `build_video.py` helper directly consumes `scenes[].image` and `scenes[].duration_seconds`; the extended fields provide semantic, stylistic, and character traceability for the agent and user. Paths are absolute or relative to this JSON file. Scene start is the sum of preceding durations. Adjust the final duration to make the sum equal probed audio duration D within 0.15s. Verify each subidea has saved art and the sequence covers each intended occurrence. Do not describe this approximate timeline as subtitles or karaoke.
+
+To opt in for the example character, add `"avatar_image": "avatars/traveler.png"` to that character after placing the supplied file beside the storyboard. Omit the field to retain text-only character generation. The `skills/dual-image-pipeline/scripts/generate.py` scheduler routes avatar-linked assets only to verified `supports_references:true` routes; configured CLI adapters must actually pass the references to their image tool. Unsupported routes remain ineligible for those assets.

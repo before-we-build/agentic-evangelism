@@ -50,6 +50,47 @@ class FinishVideoTests(unittest.TestCase):
             self.module.finish(Path("audio.mp3"), Path("story.json"), Path("timing.json"),
                                Path("/tmp/work"), "../other")
 
+    def test_accepts_runtime_temporary_directory_but_checks_audio(self):
+        # A Termux/PRoot runtime can choose a canonical temp root other than /tmp.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            downloads = root / 'Download'
+            downloads.mkdir()
+            workspace = root / 'runtime-temp' / 'work'
+            workspace.mkdir(parents=True)
+            with patch.object(self.module.tempfile, 'gettempdir', return_value=str(workspace.parent)):
+                with patch.object(self.module, 'check_file_stability') as stability:
+                    with self.assertRaisesRegex(ValueError, 'Audio must be'):
+                        self.module.finish(root / 'private.mp3', workspace / 'storyboard.json',
+                                           workspace / 'timing.json', workspace, 'song', downloads)
+                stability.assert_not_called()
+
+    def test_rejects_workspace_that_escapes_allowed_root_through_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            downloads = root / 'Download'
+            downloads.mkdir()
+            workspace = root / 'private'
+            workspace.mkdir()
+            (downloads / 'linked-work').symlink_to(workspace, target_is_directory=True)
+            # Patch only /tmp resolution to make this independent of whichever
+            # temporary root hosts the test itself.
+            real_resolve = Path.resolve
+
+            def resolve_without_test_temp(path, *args, **kwargs):
+                if path == Path('/tmp'):
+                    return root / 'other-system-temp'
+                return real_resolve(path, *args, **kwargs)
+
+            with patch.object(Path, 'resolve', resolve_without_test_temp):
+                with patch.object(self.module.tempfile, 'gettempdir', return_value=str(root / 'other-temp')):
+                    with patch.object(self.module, 'check_file_stability') as stability:
+                        with self.assertRaisesRegex(ValueError, 'Workspace must be'):
+                            self.module.finish(downloads / 'song.mp3', workspace / 'storyboard.json',
+                                               workspace / 'timing.json', downloads / 'linked-work',
+                                               'song', downloads)
+                    stability.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

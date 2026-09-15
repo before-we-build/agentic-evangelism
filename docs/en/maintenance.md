@@ -6,7 +6,7 @@
 
 Human guides live in `docs/en`, `docs/ru` and `docs/uk`. The root README is a three-language entry page. Each guide has the same filename in all three folders. The skill lives in `skills/suno-tiktok-video`; `SKILL.md` is the executable English entrypoint, with Russian and Ukrainian reading copies. Those copies describe the same workflow, not three different skills. Reference documents also have translations. Python identifiers and shell commands stay unchanged across languages.
 
-`scripts/install_skill.py` installs only the skill folder. It does not install third-party tools, change permissions, edit account configuration or publish anything. It refuses an existing destination. Pass `--destination PATH` only when you know the skill directory used by your Codex installation.
+`scripts/install_skill.py` installs a selected bundled skill (`suno-tiktok-video` by default, or `--skill dual-image-pipeline`). It does not install third-party tools, change permissions, edit account configuration or publish anything. It refuses an existing destination unless `--update` is specified. Updates preserve a complete adjacent backup and retain local-only files. Pass `--destination PATH` only when you know the skill directory used by your Codex installation.
 
 ## What was actually checked
 
@@ -71,4 +71,11 @@ No output means there are no listed local edits. If it lists edits you want to k
 git pull --ff-only
 ```
 
-Updating the checkout does not overwrite an installed skill; compare and update that copy separately. Automatic posting, distribution accounts and bulk outreach are outside this starter workflow.
+Updating the checkout does not update the installed skills. After comparing local changes, run the following in the project directory, in the same Termux/PRoot shell on Android, if Codex actually loads `~/.codex/skills`:
+
+```sh
+python3 scripts/install_skill.py --destination ~/.codex/skills --skill dual-image-pipeline --update
+python3 scripts/install_skill.py --destination ~/.codex/skills --skill suno-tiktok-video --update
+```
+
+For another installation, substitute its verified skills directory. Expect the installed path and, for an existing copy, a backup path. Review the result and restart Codex to load the updated instructions. Keep the backup until the update has been checked. Automatic posting, distribution accounts and bulk outreach are outside this starter workflow.
