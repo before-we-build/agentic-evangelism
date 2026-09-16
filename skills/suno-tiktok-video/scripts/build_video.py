@@ -10,9 +10,9 @@ import tempfile
 import time
 
 try:
-    from platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file, escape_ffmpeg_filter_path
+    from platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file, is_valid_video_file, escape_ffmpeg_filter_path
 except ImportError:
-    from .platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file, escape_ffmpeg_filter_path
+    from .platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file, is_valid_video_file, escape_ffmpeg_filter_path
 
 
 def probe(path, ffprobe_bin='ffprobe'):
@@ -130,24 +130,32 @@ def main():
 
         if not isinstance(scenes, list) or not scenes:
             parser.error('Storyboard needs a nonempty scenes list')
-        images = []
+        scene_media = []  # List of tuples: (path, media_type) where media_type is 'image' or 'video'
         lengths = []
         for idx, scene in enumerate(scenes):
             if not isinstance(scene, dict):
                 parser.error(f'Scene at index {idx} must be an object')
+            video_ref = scene.get('video')
             img_ref = scene.get('image')
-            if not img_ref and 'asset_id' in scene:
+            if not video_ref and not img_ref and 'asset_id' in scene:
                 asset_id = str(scene['asset_id'])
                 if asset_id not in assets_by_id:
                     parser.error(f"Scene {idx} references unknown asset_id '{asset_id}'")
+                video_ref = assets_by_id[asset_id].get('video')
                 img_ref = assets_by_id[asset_id].get('image')
-            if not img_ref:
-                parser.error(f"Scene {idx} must specify an 'image' path or a valid 'asset_id'")
 
-            path = Path(img_ref).expanduser()
+            chosen_ref = video_ref or img_ref
+            if not chosen_ref:
+                parser.error(f"Scene {idx} must specify a 'video', an 'image' path or a valid 'asset_id'")
+
+            path = Path(chosen_ref).expanduser()
             if not path.is_absolute():
                 path = args.storyboard.resolve().parent / path
-            images.append(path)
+
+            # Determine whether this media is video or image
+            media_type = 'video' if video_ref else 'image'
+            scene_media.append((path, media_type))
+
             length = float(scene['duration_seconds'])
             if not math.isfinite(length) or length <= 0:
                 parser.error('Scene durations must be finite and positive')
@@ -155,13 +163,17 @@ def main():
         if abs(sum(lengths) - duration) > 0.15:
             parser.error('Storyboard durations must cover the full audio within 0.15 seconds')
     else:
-        images = [args.image.expanduser().resolve()]
+        scene_media = [(args.image.expanduser().resolve(), 'image')]
         lengths = [duration]
-    for path in images:
+    for path, media_type in scene_media:
         if not path.is_file() or path.stat().st_size == 0:
-            parser.error(f'Missing or empty image: {path}')
-        if not is_valid_image_file(path):
-            parser.error(f'Corrupt or invalid image format (must be valid PNG, JPEG, or WebP): {path}')
+            parser.error(f'Missing or empty {media_type}: {path}')
+        if media_type == 'image':
+            if not is_valid_image_file(path):
+                parser.error(f'Corrupt or invalid image format (must be valid PNG, JPEG, or WebP): {path}')
+        elif media_type == 'video':
+            if not is_valid_video_file(path):
+                parser.error(f'Corrupt or invalid video format (must be valid MP4 or WebM): {path}')
     try:
         clip_frames, offsets, t_frames = calculate_timeline(
             lengths, duration, args.transition, args.transition_duration, fps=25)
@@ -210,24 +222,40 @@ def main():
             '-metadata', f"comment={active_attr_text or 'Created with AI'}",
         ])
 
-    for index, (image, count) in enumerate(zip(images, clip_frames)):
+    for index, ((media_path, media_type), count) in enumerate(zip(scene_media, clip_frames)):
         clip = work / f'scene-{index:05d}.mp4'
-        print(json.dumps({'scene': index + 1, 'total': len(images)}, ensure_ascii=False), flush=True)
-        run([ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
-             '-n', '-loop', '1', '-framerate', '25', '-i', str(image),
-             '-map', '0:v:0', '-map_metadata', '-1',
-             '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
-             '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
-             '-crf', '22', '-pix_fmt', 'yuv420p', '-threads', '4',
-             '-frames:v', str(count), '-an', str(clip)])
-    if offsets is not None and len(images) > 1:
+        print(json.dumps({'scene': index + 1, 'total': len(scene_media), 'type': media_type}, ensure_ascii=False), flush=True)
+        if media_type == 'image':
+            run([ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+                 '-n', '-loop', '1', '-framerate', '25', '-i', str(media_path),
+                 '-map', '0:v:0', '-map_metadata', '-1',
+                 '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                 '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
+                 '-crf', '22', '-pix_fmt', 'yuv420p', '-threads', '4',
+                 '-frames:v', str(count), '-an', str(clip)])
+        else:
+            # Video scene: normalize fps, scale to 9:16 portrait, pad if needed, hold last frame if shorter than count
+            video_filter = (
+                'fps=25,'
+                'scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,'
+                'pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,'
+                f'tpad=stop_mode=clone:stop_duration={count/25.0:.2f}'
+            )
+            run([ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
+                 '-n', '-i', str(media_path),
+                 '-map', '0:v:0', '-map_metadata', '-1',
+                 '-vf', video_filter,
+                 '-c:v', 'libx264', '-preset', 'ultrafast',
+                 '-crf', '22', '-pix_fmt', 'yuv420p', '-threads', '4',
+                 '-frames:v', str(count), '-an', str(clip)])
+    if offsets is not None and len(scene_media) > 1:
         t_sec = t_frames / 25
         filter_steps = []
         last_label = '0:v'
-        for idx in range(1, len(images)):
+        for idx in range(1, len(scene_media)):
             next_label = f'{idx}:v'
-            out_label = 'v_xfade' if (idx == len(images) - 1 and attr_filter) else ('v' if idx == len(images) - 1 else f'x{idx}')
-            fmt = ',format=yuv420p' if (idx == len(images) - 1 and not attr_filter) else ''
+            out_label = 'v_xfade' if (idx == len(scene_media) - 1 and attr_filter) else ('v' if idx == len(scene_media) - 1 else f'x{idx}')
+            fmt = ',format=yuv420p' if (idx == len(scene_media) - 1 and not attr_filter) else ''
             o_sec = offsets[idx - 1] / 25
             filter_steps.append(
                 f'[{last_label}][{next_label}]xfade=transition=fade:duration={t_sec:.4f}:offset={o_sec:.4f}{fmt}[{out_label}]'
@@ -237,12 +265,12 @@ def main():
             filter_steps.append(f'[v_xfade]{attr_filter},format=yuv420p[v]')
         filter_complex = ';'.join(filter_steps)
         cmd = [ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin', '-n']
-        for i in range(len(images)):
+        for i in range(len(scene_media)):
             cmd.extend(['-i', str(work / f'scene-{i:05d}.mp4')])
         cmd.extend([
             '-i', str(audio),
             '-filter_complex', filter_complex,
-            '-map', '[v]', '-map', f'{len(images)}:a:0', *meta_args,
+            '-map', '[v]', '-map', f'{len(scene_media)}:a:0', *meta_args,
             '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22',
             '-pix_fmt', 'yuv420p', '-threads', '4',
             '-c:a', 'aac', '-b:a', '192k', '-t', str(duration),
@@ -252,7 +280,7 @@ def main():
     else:
         # Only generated ASCII filenames enter the concat syntax, never user paths.
         playlist = work / 'scenes.txt'
-        playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(images))), encoding='utf-8')
+        playlist.write_text(''.join(f"file 'scene-{i:05d}.mp4'\n" for i in range(len(scene_media))), encoding='utf-8')
         if attr_filter:
             cmd = [ffmpeg_bin, '-hide_banner', '-loglevel', 'error', '-xerror', '-nostdin',
                    '-n', '-f', 'concat', '-safe', '1', '-i', str(playlist), '-i', str(audio),
@@ -291,7 +319,7 @@ def main():
         shutil.copyfileobj(src, dst)
     if output.stat().st_size != stage.stat().st_size:
         raise RuntimeError('Destination copy size mismatch')
-    effective_transition = args.transition if (offsets is not None and len(images) > 1) else 'none'
+    effective_transition = args.transition if (offsets is not None and len(scene_media) > 1) else 'none'
     report = {
         'output': str(output),
         'bytes': output.stat().st_size,

@@ -321,6 +321,28 @@ def is_valid_image_file(path: str | Path) -> bool:
         return False
 
 
+def is_valid_video_file(path: str | Path) -> bool:
+    """Check whether file exists, is non-empty, and has valid video magic bytes (MP4/MOV, WebM/MKV)."""
+    p = Path(path)
+    if not p.is_file():
+        return False
+    try:
+        size = p.stat().st_size
+        if size < 16:
+            return False
+        with open(p, 'rb') as f:
+            header = f.read(32)
+        # MP4/MOV ftyp box
+        if len(header) >= 12 and header[4:8] == b'ftyp':
+            return True
+        # WebM / MKV EBML header
+        if header.startswith(b'\x1a\x45\xdf\xa3'):
+            return True
+        return False
+    except (OSError, PermissionError):
+        return False
+
+
 TIKTOK_SAFE_ZONE_X = (108, 842)
 TIKTOK_SAFE_ZONE_Y = (230, 1380)
 
