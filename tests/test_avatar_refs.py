@@ -14,7 +14,7 @@ SPEC.loader.exec_module(avatar_refs)
 class AvatarReferenceTests(unittest.TestCase):
     def test_optional_avatar_applies_only_to_linked_assets(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "avatars").mkdir()
             avatar = root / "avatars/person.png"
             avatar.write_bytes(bytes.fromhex("89504e470d0a1a0a") + b"image data")

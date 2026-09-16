@@ -70,7 +70,7 @@ class DualImagePipelineTests(unittest.TestCase):
 
     def test_avatars_retained_and_require_reference_capability(self):
         with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp)
+            work = Path(tmp).resolve()
             avatar = work / "avatar.png"
             avatar.write_bytes(generate.TINY_PNG)
             jobs = generate.prepare_jobs({
@@ -90,7 +90,7 @@ class DualImagePipelineTests(unittest.TestCase):
 
     def test_generated_reference_also_adds_dependency(self):
         with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp)
+            work = Path(tmp).resolve()
             jobs = generate.prepare_jobs({"assets": [
                 {"id": "anchor", "prompt": "Portrait", "image": "anchor.png", "review_required": True},
                 {"id": "scene", "prompt": "Walking", "reference_asset_ids": ["anchor"]}
