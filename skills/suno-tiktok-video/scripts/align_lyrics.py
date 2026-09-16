@@ -8,8 +8,10 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Any, Dict, List, Optional
 
 DEFAULT_MODEL = "whisper-large-v3"
@@ -41,15 +43,56 @@ def call_groq_whisper(
     language: Optional[str] = None,
     model: str = DEFAULT_MODEL,
     timeout: int = 60,
+    ffmpeg_bin: str = "ffmpeg",
 ) -> Dict[str, Any]:
     """Transcribe through the official Groq SDK with word and segment timestamps."""
     try:
         from groq import Groq
     except ImportError as error:
-        raise RuntimeError("Official Groq SDK is missing; install 'groq' in this Python environment") from error
+        raise RuntimeError("Official Groq SDK is missing; install 'groq' in this Python environment") from None
+
+    size = audio_path.stat().st_size if audio_path.is_file() else 0
+    temp_downsampled: Optional[Path] = None
+    target_upload_path = audio_path
+
+    # Groq Free Tier has a strict 25 MB payload limit (26,214,400 bytes).
+    # If audio is > 20MB or uncompressed (WAV/FLAC), prepare a lightweight 16kHz mono MP3.
+    is_large = size > 20 * 1024 * 1024
+    is_uncompressed = audio_path.suffix.lower() in ('.wav', '.flac', '.aif', '.aiff')
+    ffmpeg_available = bool(shutil.which(ffmpeg_bin) or Path(ffmpeg_bin).is_file())
+
+    if (is_large or is_uncompressed) and ffmpeg_available:
+        try:
+            with tempfile.NamedTemporaryFile(suffix="-groq-asr.mp3", delete=False) as tmp:
+                temp_downsampled = Path(tmp.name)
+            subprocess.run([
+                ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y", "-nostdin",
+                "-i", str(audio_path),
+                "-ac", "1", "-ar", "16000", "-b:a", "64k",
+                str(temp_downsampled)
+            ], check=True)
+            if temp_downsampled.stat().st_size < size:
+                target_upload_path = temp_downsampled
+        except Exception:
+            if temp_downsampled and temp_downsampled.exists():
+                try:
+                    temp_downsampled.unlink()
+                except OSError:
+                    pass
+            temp_downsampled = None
+            target_upload_path = audio_path
+
+    upload_size = target_upload_path.stat().st_size if target_upload_path.is_file() else 0
+    if upload_size > 25 * 1024 * 1024:
+        if temp_downsampled and temp_downsampled.exists():
+            temp_downsampled.unlink()
+        raise RuntimeError(
+            f"Audio file size ({upload_size / (1024 * 1024):.1f} MB) exceeds Groq limit of 25 MB. "
+            "Please compress or downsample the audio before alignment."
+        )
 
     request: Dict[str, Any] = {
-        "file": audio_path,
+        "file": target_upload_path,
         "model": model,
         "response_format": "verbose_json",
         "timestamp_granularities": ["word", "segment"],
@@ -63,7 +106,14 @@ def call_groq_whisper(
         response = Groq(api_key=api_key, timeout=timeout, max_retries=0).audio.transcriptions.create(**request)
     except Exception as error:
         detail = str(error).replace(api_key, "[REDACTED]")
-        raise RuntimeError(f"Groq transcription failed: {detail}") from error
+        # from None prevents leaking raw error or headers containing api_key in Python's __cause__
+        raise RuntimeError(f"Groq transcription failed: {detail}") from None
+    finally:
+        if temp_downsampled and temp_downsampled.exists():
+            try:
+                temp_downsampled.unlink()
+            except OSError:
+                pass
     return response.model_dump()
 
 
@@ -77,7 +127,8 @@ def align_segments_to_scenes(
     Guarantees:
     - First scene starts at 0.0 (covers musical intro).
     - Last scene ends at total_duration (covers outro).
-    - Every scene has duration >= 0.5s.
+    - Every scene has duration > 0.
+    - Boundaries are strictly monotonically increasing.
     - Sum of durations equals total_duration within 0.15s.
     """
     num_scenes = len(scenes)
@@ -110,18 +161,22 @@ def align_segments_to_scenes(
     # Boundaries for transitions between scenes (num_scenes + 1 points)
     # T[0] = 0.0, T[num_scenes] = total_duration
     boundaries: List[float] = [0.0]
+    min_step = min(1.0, max(0.04, total_duration / (num_scenes * 2)))
 
     num_segs = len(valid_segs)
     for i in range(1, num_scenes):
         # Calculate proportional index in detected segments
         seg_idx = min(int(round((i / num_scenes) * num_segs)), num_segs - 1)
-        # Transition happens around the start of the next segment
         transition_point = valid_segs[seg_idx]["start"]
 
-        # Ensure transition point is strictly increasing and has minimum padding
-        min_prev = boundaries[-1] + 1.0
-        max_next = total_duration - (num_scenes - i) * 1.0
-        chosen = max(min_prev, min(transition_point, max_next))
+        min_prev = boundaries[-1] + min_step
+        max_next = total_duration - (num_scenes - i) * min_step
+        if min_prev > max_next:
+            remaining_time = total_duration - boundaries[-1]
+            remaining_scenes = num_scenes - i + 1
+            chosen = boundaries[-1] + (remaining_time / remaining_scenes)
+        else:
+            chosen = max(min_prev, min(transition_point, max_next))
         boundaries.append(round(chosen, 3))
 
     boundaries.append(round(total_duration, 3))
@@ -159,30 +214,34 @@ def main() -> None:
     parser.add_argument("--language", type=str, help="Language code (e.g. 'uk', 'ru', 'en')")
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL, help=f"Groq model (default: {DEFAULT_MODEL})")
     parser.add_argument("--ffprobe", type=str, default="ffprobe", help="Path to ffprobe executable")
+    parser.add_argument("--ffmpeg", type=str, default="ffmpeg", help="Path to ffmpeg executable")
     parser.add_argument("--dry-run", action="store_true", help="Simulate alignment without sending network request")
-    parser.add_argument("--strict", action="store_true", help="Fail with non-zero exit code if GROQ_API_KEY is missing")
+    parser.add_argument("--strict", action="store_true", help="Exit with code 2 if Groq key or dependencies are missing")
 
     args = parser.parse_args()
 
     audio_path = args.audio.expanduser().resolve()
-    if not audio_path.is_file():
-        sys.exit(f"Error: audio file not found: {audio_path}")
-
     storyboard_path = args.storyboard.expanduser().resolve()
-    if not storyboard_path.is_file():
-        sys.exit(f"Error: storyboard file not found: {storyboard_path}")
 
-    sb_data = json.loads(storyboard_path.read_text(encoding="utf-8"))
+    if not audio_path.is_file():
+        parser.error(f"Audio file not found: {audio_path}")
+    if not storyboard_path.is_file():
+        parser.error(f"Storyboard file not found: {storyboard_path}")
+
+    try:
+        sb_data = json.loads(storyboard_path.read_text(encoding="utf-8"))
+    except Exception as err:
+        parser.error(f"Malformed storyboard JSON: {err}")
+
     scenes = sb_data.get("scenes", [])
     if not isinstance(scenes, list) or not scenes:
-        sys.exit("Error: storyboard contains no scenes")
+        parser.error("Storyboard has no scenes")
 
     total_duration = probe_audio_duration(audio_path, args.ffprobe)
-    if total_duration <= 0:
-        # Try calculating from storyboard durations if ffprobe duration unavailable
+    if total_duration <= 0.0:
         total_duration = sum(float(s.get("duration_seconds", 0)) for s in scenes)
-    if total_duration <= 0:
-        sys.exit("Error: unable to determine audio duration")
+    if total_duration <= 0.0:
+        parser.error("Unable to determine positive audio duration from audio or storyboard")
 
     api_key = os.environ.get("GROQ_API_KEY", "")
 
@@ -218,13 +277,18 @@ def main() -> None:
         segments = mock_segments
     else:
         print(f"[align_lyrics] Connecting to Groq Whisper ({args.model})...")
-        resp = call_groq_whisper(
-            audio_path=audio_path,
-            api_key=api_key,
-            prompt=prompt,
-            language=args.language,
-            model=args.model,
-        )
+        try:
+            resp = call_groq_whisper(
+                audio_path=audio_path,
+                api_key=api_key,
+                prompt=prompt,
+                language=args.language,
+                model=args.model,
+                ffmpeg_bin=args.ffmpeg,
+            )
+        except RuntimeError as error:
+            print(f"[align_lyrics] Error: {error}", file=sys.stderr)
+            sys.exit(1)
         segments = resp.get("segments", [])
 
     aligned_scenes = align_segments_to_scenes(scenes, segments, total_duration)

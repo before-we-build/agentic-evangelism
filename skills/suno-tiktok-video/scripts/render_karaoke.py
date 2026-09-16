@@ -12,6 +12,19 @@ import subprocess
 import tempfile
 
 
+try:
+    from platform_utils import escape_ffmpeg_filter_path
+except ImportError:
+    try:
+        from .platform_utils import escape_ffmpeg_filter_path
+    except ImportError:
+        def escape_ffmpeg_filter_path(path: str | Path) -> str:
+            p = str(Path(path).resolve()).replace('\\', '/')
+            p = p.replace(':', r'\:')
+            p = p.replace("'", r"\'").replace('[', r'\[').replace(']', r'\]')
+            return p
+
+
 def ass_time(seconds: float) -> str:
     centiseconds = round(seconds * 100)
     hours, remainder = divmod(centiseconds, 360000)
@@ -52,6 +65,21 @@ def validate_lines(data: dict, duration: float) -> list[dict]:
             previous_word_end = word_end
         previous_end = end
     return lines
+
+
+def validate_timing_data(data: dict, duration: float) -> tuple[list[dict], dict]:
+    """Validate timing file structure, line timings, and optional review/hash metadata."""
+    metadata = {
+        "reviewed": data.get("reviewed", True),
+        "audio_hash": data.get("audio_hash"),
+        "lyrics_hash": data.get("lyrics_hash"),
+        "version": data.get("version"),
+    }
+    if data.get("reviewed") is False:
+        import sys
+        print("[WARNING] Timing data has reviewed=False; human review of lyrics is recommended.", file=sys.stderr)
+    lines = validate_lines(data, duration)
+    return lines, metadata
 
 
 def make_ass(lines: list[dict], width: int, height: int) -> str:
@@ -147,22 +175,24 @@ def main() -> None:
         parser.error("ffmpeg not found")
 
     width, height, duration = video_details(probe(video, args.ffprobe))
-    lines = validate_lines(json.loads(timing.read_text(encoding="utf-8")), duration)
+    timing_data = json.loads(timing.read_text(encoding="utf-8"))
+    lines, timing_meta = validate_timing_data(timing_data, duration)
     ass_text = make_ass(lines, width, height)
     if ass_output:
         ass_output.write_text(ass_text, encoding="utf-8")
     if args.ass_only:
-        print(json.dumps({"ass": str(ass_output), "lines": len(lines)}, ensure_ascii=False))
+        print(json.dumps({"ass": str(ass_output), "lines": len(lines), "metadata": timing_meta}, ensure_ascii=False))
         return
 
     with tempfile.TemporaryDirectory(prefix="suno-karaoke-") as temporary:
         temporary_path = Path(temporary)
         ass_file = temporary_path / "karaoke.ass"
         ass_file.write_text(ass_text, encoding="utf-8")
+        escaped_ass = escape_ffmpeg_filter_path(ass_file)
         stage = temporary_path / "stage.mp4"
         command = [
             args.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-xerror",
-            "-i", str(video), "-vf", f"ass={ass_file}",
+            "-i", str(video), "-vf", f"ass='{escaped_ass}'",
             "-map", "0:v:0", "-map", "0:a:0", "-map_metadata", "0",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart",

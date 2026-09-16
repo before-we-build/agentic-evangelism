@@ -10,9 +10,9 @@ import tempfile
 import time
 
 try:
-    from platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file
+    from platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file, escape_ffmpeg_filter_path
 except ImportError:
-    from .platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file
+    from .platform_utils import detect_audio_attribution, find_system_font, is_valid_image_file, escape_ffmpeg_filter_path
 
 
 def probe(path, ffprobe_bin='ffprobe'):
@@ -189,12 +189,12 @@ def main():
         if system_font:
             attr_file = work / 'attribution.txt'
             attr_file.write_text(active_attr_text, encoding='utf-8')
-            font_esc = str(system_font).replace('\\', '/').replace(':', '\\:')
-            text_esc = str(attr_file).replace('\\', '/').replace(':', '\\:')
+            font_esc = escape_ffmpeg_filter_path(system_font)
+            text_esc = escape_ffmpeg_filter_path(attr_file)
             attr_filter = (
                 f"drawtext=fontfile='{font_esc}':textfile='{text_esc}':"
                 f"fontsize=38:fontcolor=white@0.92:box=1:boxcolor=black@0.5:boxborderw=14:"
-                f"x=60:y=1450:enable='between(t,0.5,4.0)':"
+                f"x=110:y=1340:enable='between(t,0.5,4.0)':"
                 f"alpha='if(lt(t,1.0),(t-0.5)*2,if(gt(t,3.5),(4.0-t)*2,1.0))'"
             )
         else:

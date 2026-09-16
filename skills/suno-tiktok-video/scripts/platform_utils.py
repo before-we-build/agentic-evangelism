@@ -321,38 +321,85 @@ def is_valid_image_file(path: str | Path) -> bool:
         return False
 
 
+TIKTOK_SAFE_ZONE_X = (108, 842)
+TIKTOK_SAFE_ZONE_Y = (230, 1380)
+
+EXCLUDED_CLUE_TAGS = {
+    'lyrics', 'unsyncedlyrics', 'unsynced lyrics', 'syncedlyrics',
+    'lyrics-xxx', 'lyrics-eng', 'lyrics-rus', 'lyrics-ukr', 'lyrics-und',
+    'text', 'subtitles',
+}
+
+
+def escape_ffmpeg_filter_path(path: str | Path) -> str:
+    """Safely escape a filesystem path for inclusion in FFmpeg filtergraphs.
+
+    Normalizes backslashes to forward slashes (valid on Windows and POSIX),
+    escapes colons for Windows drive letters (C\\:/...), and escapes
+    single quotes, brackets, and commas.
+    """
+    p = str(Path(path).resolve()).replace('\\', '/')
+    p = p.replace(':', r'\:')
+    p = p.replace("'", r"\'").replace('[', r'\[').replace(']', r'\]')
+    return p
+
+
 def detect_audio_attribution(
     metadata: dict | None = None,
     filename: str | Path | None = None,
     lang: str = 'ru',
     user_provenance: str | None = None,
 ) -> dict:
-    """Detect AI music generator and prepare attribution, disclosure & provenance data."""
+    """Detect AI music generator and prepare attribution, disclosure & provenance data.
+
+    Explicit user_provenance='human' always takes precedence over heuristic detection.
+    Lyrical content tags are excluded from clues to avoid false-positive detections.
+    """
     lang_code = lang.lower() if lang else 'ru'
     if lang_code not in ('ru', 'uk', 'en'):
         lang_code = 'ru'
 
-    clues = []
+    if user_provenance == 'human':
+        return {
+            'generator': None,
+            'name': None,
+            'is_ai': False,
+            'provenance': 'human',
+            'detection_source': 'user_choice',
+            'attribution_text': None,
+            'caption_text': None,
+            'hashtags': '',
+            'requires_ai_toggle': False,
+            'requires_attribution': False,
+        }
+
+    detection_sources = []
     if filename:
-        clues.append(Path(filename).name)
+        fname = Path(filename).name
+        detection_sources.append(('filename', fname))
 
     if metadata and isinstance(metadata, dict):
         fmt_tags = metadata.get('format', {}).get('tags', {})
         if isinstance(fmt_tags, dict):
             for k, v in fmt_tags.items():
-                clues.append(f'{k}={v}')
+                if k.lower() not in EXCLUDED_CLUE_TAGS:
+                    detection_sources.append((f'tag:{k}', str(v)))
         for s in metadata.get('streams', []):
             st_tags = s.get('tags', {})
             if isinstance(st_tags, dict):
                 for k, v in st_tags.items():
-                    clues.append(f'{k}={v}')
-
-    search_text = ' '.join(clues).lower()
+                    if k.lower() not in EXCLUDED_CLUE_TAGS:
+                        detection_sources.append((f'tag:{k}', str(v)))
 
     detected = None
-    for rule in GENERATOR_RULES:
-        if re.search(rule['pattern'], search_text, re.IGNORECASE):
-            detected = rule
+    matched_source = None
+    for src_type, src_val in detection_sources:
+        for rule in GENERATOR_RULES:
+            if re.search(rule['pattern'], src_val, re.IGNORECASE):
+                detected = rule
+                matched_source = src_type
+                break
+        if detected:
             break
 
     if not detected:
@@ -362,6 +409,7 @@ def detect_audio_attribution(
             'name': None,
             'is_ai': (prov == 'ai'),
             'provenance': prov,
+            'detection_source': 'user_choice' if user_provenance in ('human', 'ai', 'mixed') else 'none',
             'attribution_text': None,
             'caption_text': None,
             'hashtags': '',
@@ -380,11 +428,13 @@ def detect_audio_attribution(
     else:
         caption = f"Музыка создана с помощью {name}. {hashtags} #христианскиепесни"
 
+    prov = user_provenance if user_provenance in ('ai', 'mixed') else 'ai'
     return {
         'generator': detected['id'],
         'name': name,
         'is_ai': True,
-        'provenance': 'ai',
+        'provenance': prov,
+        'detection_source': matched_source or 'heuristic',
         'attribution_text': attr_text,
         'caption_text': caption,
         'hashtags': hashtags,

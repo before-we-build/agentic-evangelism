@@ -11,7 +11,8 @@ import wave
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPERS = ROOT / 'skills' / 'suno-tiktok-video' / 'scripts'
-
+if str(HELPERS) not in sys.path:
+    sys.path.insert(0, str(HELPERS))
 
 spec = importlib.util.spec_from_file_location('build_video', HELPERS / 'build_video.py')
 build_video_module = importlib.util.module_from_spec(spec)

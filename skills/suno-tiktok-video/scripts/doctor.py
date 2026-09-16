@@ -2,6 +2,7 @@
 """Diagnostic doctor for suno-tiktok-video environment and dependencies."""
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,6 +29,34 @@ def find_tool(name: str, custom_path: str | None = None) -> str | None:
     return shutil.which(name)
 
 
+def check_groq() -> dict:
+    sdk_installed = False
+    try:
+        import groq
+        sdk_installed = True
+    except ImportError:
+        pass
+    has_key = bool(os.environ.get("GROQ_API_KEY", "").strip())
+    return {
+        'sdk_installed': sdk_installed,
+        'key_configured': has_key,
+        'ok': sdk_installed and has_key,
+    }
+
+
+def check_disk_space(target_dir: Path | None = None) -> dict:
+    p = target_dir or Path(tempfile.gettempdir())
+    try:
+        usage = shutil.disk_usage(p)
+        free_mb = usage.free / (1024 * 1024)
+        return {
+            'free_mb': round(free_mb, 1),
+            'ok': free_mb >= 200,
+        }
+    except Exception:
+        return {'free_mb': None, 'ok': True}
+
+
 def check_ffmpeg_features(ffmpeg_bin: str) -> dict:
     font = find_system_font()
     features = {
@@ -36,6 +65,7 @@ def check_ffmpeg_features(ffmpeg_bin: str) -> dict:
         'scale_filter': False,
         'pad_filter': False,
         'xfade_filter': False,
+        'ass_filter': False,
         'drawtext_filter': False,
         'system_font': str(font) if font else None,
     }
@@ -64,6 +94,7 @@ def check_ffmpeg_features(ffmpeg_bin: str) -> dict:
         features['scale_filter'] = ' scale ' in filters_out or '\nscale ' in filters_out
         features['pad_filter'] = ' pad ' in filters_out or '\npad ' in filters_out
         features['xfade_filter'] = ' xfade ' in filters_out or '\nxfade ' in filters_out
+        features['ass_filter'] = ' ass ' in filters_out or '\nass ' in filters_out
         features['drawtext_filter'] = ' drawtext ' in filters_out or '\ndrawtext ' in filters_out
     except Exception as e:
         features['error'] = str(e)
@@ -137,6 +168,17 @@ def run_doctor(ffmpeg_arg: str | None = None,
     ffprobe_path = find_tool('ffprobe', ffprobe_arg)
 
     ffmpeg_features = check_ffmpeg_features(ffmpeg_path) if ffmpeg_path else {'ok': False}
+    groq_info = check_groq()
+    disk_info = check_disk_space(downloads if downloads.is_dir() else None)
+
+    base_video_ok = (
+        py_check['ok'] and
+        bool(ffmpeg_path) and
+        bool(ffprobe_path) and
+        ffmpeg_features.get('ok', False)
+    )
+    karaoke_ass_ok = base_video_ok and ffmpeg_features.get('ass_filter', False)
+    badge_overlay_ok = base_video_ok and ffmpeg_features.get('drawtext_filter', False) and bool(ffmpeg_features.get('system_font'))
 
     report = {
         'platform': plat,
@@ -148,6 +190,14 @@ def run_doctor(ffmpeg_arg: str | None = None,
         'ffprobe_found': bool(ffprobe_path),
         'ffprobe_path': ffprobe_path,
         'ffmpeg_features': ffmpeg_features,
+        'groq': groq_info,
+        'disk': disk_info,
+        'capabilities': {
+            'base_video': base_video_ok,
+            'karaoke_ass': karaoke_ass_ok,
+            'badge_overlay': badge_overlay_ok,
+            'groq_alignment': groq_info['ok'],
+        },
     }
 
     if test_render_flag and ffmpeg_path and ffprobe_path and ffmpeg_features.get('ok'):
@@ -156,10 +206,7 @@ def run_doctor(ffmpeg_arg: str | None = None,
         report['test_render'] = {'ok': False, 'reason': 'FFmpeg or required codecs unavailable'}
 
     all_ok = (
-        py_check['ok'] and
-        bool(ffmpeg_path) and
-        bool(ffprobe_path) and
-        ffmpeg_features.get('ok', False) and
+        base_video_ok and
         (not test_render_flag or report.get('test_render', {}).get('ok', False))
     )
     report['overall_ok'] = all_ok
@@ -181,6 +228,17 @@ def run_doctor(ffmpeg_arg: str | None = None,
             print(f'  scale:       {"✓" if feats.get("scale_filter") else "✗ MISSING"}')
             print(f'  pad:         {"✓" if feats.get("pad_filter") else "✗ MISSING"}')
             print(f'  xfade:       {"✓" if feats.get("xfade_filter") else "✗ MISSING"}')
+            print(f'  ass (libass):{"✓" if feats.get("ass_filter") else "✗ MISSING (karaoke disabled)"}')
+            print(f'  drawtext:    {"✓" if feats.get("drawtext_filter") else "✗ MISSING"}')
+            print(f'  system font: {"✓ (" + feats.get("system_font") + ")" if feats.get("system_font") else "✗ NOT FOUND"}')
+        print(f'Groq SDK:      {"✓" if groq_info["sdk_installed"] else "✗ Not installed"} (Key: {"Configured" if groq_info["key_configured"] else "Missing"})')
+        disk_str = f"{disk_info['free_mb']} MB" if disk_info['free_mb'] is not None else "Unknown"
+        print(f'Free Disk:     {disk_str} ({"OK" if disk_info["ok"] else "LOW SPACE < 200MB"})')
+        print(f'Capabilities:')
+        print(f'  Base Video:  {"YES" if base_video_ok else "NO"}')
+        print(f'  Karaoke ASS: {"YES" if karaoke_ass_ok else "NO"}')
+        print(f'  Badge:       {"YES" if badge_overlay_ok else "NO"}')
+        print(f'  Groq ASR:    {"YES" if groq_info["ok"] else "NO"}')
         if test_render_flag:
             tr = report.get('test_render', {})
             print(f'Test Render:   {"✓" if tr.get("ok") else "✗ FAILED (" + tr.get("error", "unknown") + ")"}')
