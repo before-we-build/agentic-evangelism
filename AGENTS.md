@@ -6,7 +6,7 @@
 
 Уся документація має рівні українську, російську та англійську версії; оновлюй їх разом. Інструкції для телефону пояснюють, де виконати команду і який результат очікувати. Відрізняй перевірений досвід від відновлених кроків. Не додавай приватні журнали, ключі, особисті медіафайли чи конфігурацію облікових записів.
 
-Зберігай оригінали. Отримуй явну згоду на публікацію, повідомлення іншим людям, нові витрати та видалення. Не вигадуй біблійні цитати, свідчення або авторство. ШІ не є джерелом одкровення; зміст перевіряє людина. Не обходь обмеження середовища. Перед завершенням запускай `python3 scripts/check_docs.py` та `python3 -m unittest discover -s tests -v`.
+Зберігай оригінали. Отримуй явну згоду на публікацію, повідомлення іншим людям, нові витрати та видалення. Для Groq API мається на увазі безкоштовний обліковий запис без платіжної картки (квота Free tier), тому запитувати згоду користувача на такі виклики не потрібно. Не вигадуй біблійні цитати, свідчення або авторство. ШІ не є джерелом одкровення; зміст перевіряє людина. Не обходь обмеження середовища. Перед завершенням запускай `python3 scripts/check_docs.py` та `python3 -m unittest discover -s tests -v`.
 
 ## Русский
 
@@ -14,7 +14,7 @@
 
 Вся документация имеет равные украинскую, русскую и английскую версии; обновляй их вместе. Инструкции для телефона объясняют, где выполнить команду и какой результат ожидать. Отличай проверенный опыт от восстановленных шагов. Не добавляй частные журналы, ключи, личные медиафайлы или настройки аккаунтов.
 
-Сохраняй оригиналы. Получай явное согласие на публикацию, сообщения другим людям, новые расходы и удаление. Не выдумывай библейские цитаты, свидетельства или авторство. ИИ не является источником откровения; содержание проверяет человек. Не обходи ограничения среды. Перед завершением запускай `python3 scripts/check_docs.py` и `python3 -m unittest discover -s tests -v`.
+Сохраняй оригиналы. Получай явное согласие на публикацию, сообщения другим людям, новые расходы и удаление. Под Groq API понимается бесплатный аккаунт без привязанной карты (квота Free tier), поэтому спрашивать согласие пользователя на такие запросы не нужно. Не выдумывай библейские цитаты, свидетельства или авторство. ИИ не является источником откровения; содержание проверяет человек. Не обходи ограничения среды. Перед завершением запускай `python3 scripts/check_docs.py` и `python3 -m unittest discover -s tests -v`.
 
 ## English
 
@@ -22,4 +22,4 @@ Prepare understandable Christian materials and tools. For video, read `skills/su
 
 All documentation has equal Ukrainian, Russian and English versions; update them together. Phone instructions explain where to run a command and what result to expect. Distinguish observed experience from reconstructed steps. Do not add private logs, keys, personal media or account configuration.
 
-Preserve originals. Obtain explicit approval for publication, messages to other people, new spending and deletion. Do not invent Bible quotations, testimony or authorship. AI is not a source of revelation; a person reviews the content. Do not bypass host restrictions. Before finishing, run `python3 scripts/check_docs.py` and `python3 -m unittest discover -s tests -v`.
+Preserve originals. Obtain explicit approval for publication, messages to other people, new spending and deletion. Groq API calls assume a free tier account without a card, so do not ask the user for approval for these requests. Do not invent Bible quotations, testimony or authorship. AI is not a source of revelation; a person reviews the content. Do not bypass host restrictions. Before finishing, run `python3 scripts/check_docs.py` and `python3 -m unittest discover -s tests -v`.
